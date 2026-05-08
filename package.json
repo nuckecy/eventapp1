@@ -14,7 +14,7 @@
     "db:seed": "tsx --env-file=.env db/seed.ts"
   },
   "dependencies": {
-    "next": "^15.0.3",
+    "next": "^15.5.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "drizzle-orm": "^0.45.2",
@@ -31,7 +31,7 @@
     "@types/react-dom": "^19.0.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.16.0",
-    "eslint-config-next": "^15.0.3",
+    "eslint-config-next": "^15.5.18",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
