@@ -22,6 +22,7 @@ import { FilterBar } from "@/components/cem/filter-bar";
 import { MonthSection } from "@/components/cem/month-section";
 import { PastStack } from "@/components/cem/past-stack";
 import { EmptyState } from "@/components/cem/empty-state";
+import { CalendarGridView } from "@/components/cem/calendar-grid-view";
 import {
   EVENT_TYPES,
   type EventListItem,
@@ -30,7 +31,12 @@ import {
   listDepartmentNames,
   listEvents,
 } from "@/lib/cem/events";
-import { parseEventDate, todayLocalISO } from "@/lib/cem/dates";
+import {
+  parseEventDate,
+  parseMonthParam,
+  thisMonth,
+  todayLocalISO,
+} from "@/lib/cem/dates";
 
 export const metadata = { title: "Calendar · Church Event Management" };
 
@@ -39,6 +45,7 @@ type SearchParams = Promise<{
   q?: string;
   type?: string;
   dept?: string;
+  month?: string; // YYYY-MM, only used when view=calendar
 }>;
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -88,9 +95,17 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   ]);
 
   if (view === "calendar") {
+    const today = todayLocalISO();
+    const todayYM = thisMonth();
+    const monthYM = parseMonthParam(params.month) ?? todayYM;
     return (
       <CalendarShell view={view} departments={departments}>
-        <CalendarMonthGridStub />
+        <CalendarGridView
+          events={events}
+          currentMonth={monthYM}
+          todayIso={today}
+          todayMonth={todayYM}
+        />
       </CalendarShell>
     );
   }
@@ -181,14 +196,6 @@ function CalendarShell({
       </div>
 
       {children}
-    </div>
-  );
-}
-
-function CalendarMonthGridStub() {
-  return (
-    <div className="rounded-lg border border-cal-border bg-cal-card-bg px-6 py-12 text-center text-[13px] text-cal-text-secondary">
-      Month grid view lands in F07. List view is the default until then.
     </div>
   );
 }

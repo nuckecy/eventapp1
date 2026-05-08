@@ -1,9 +1,70 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F06)
+**Latest run:** 2026-05-08 (F07)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F07 — Calendar Month Grid View (2026-05-08)
+
+**Files audited:**
+`lib/cem/dates.ts` (extended with grid helpers), `components/cem/event-detail-modal.tsx`, `components/cem/calendar-grid-view.tsx`, `app/events/page.tsx` (calendar branch)
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F07 acceptance.**
+
+### Verified controls (F07 security checkpoint per CLAUDE.md)
+
+- [x] **Event detail modal does not expose internal IDs or sensitive data to unauthorized users.** The modal renders only fields that are already exposed by the F06 list query (which is public for published events): `title`, `type`, `date`, `time`, `location`, `description`, `expected_attendance`, `department_name`. The internal `event.id` (UUID) is used as a React key and as the modal's title `id`, but is not rendered as visible text. No `created_by`, no `source_request_id`, no other internal references reach the DOM.
+
+### Defense-in-depth additions (this feature)
+
+- **`parseMonthParam` is range-checked.** A malicious `?month=` value (`hax or '1'='1`, `9999999`, `2026-13`, etc.) returns null. Verified live: `?month=hax%20or%20'1'%3D'1` returns HTTP 200 with the calendar falling back to today's month, not a crash.
+- **Native `<dialog>` element instead of custom modal.** Focus trap, Esc-to-close, body scroll-lock, return-focus-to-trigger, and ARIA `role="dialog"` / `aria-modal="true"` are all browser-managed. There's no custom focus-management JS to audit and no `tabindex` traps to misconfigure.
+- **All event content rendered through React text nodes.** Title, description, time, location, etc. are interpolated as JSX children, so React auto-escapes any HTML in user-supplied content. No `dangerouslySetInnerHTML`, no `innerHTML`. Verified by grep.
+- **Modal close uses `<form method="dialog">`.** Clicking the X button or the "Close" button submits the form to the dialog, which closes it natively. No JavaScript handlers required for close. Falls back gracefully if JS fails.
+- **Backdrop click closes the modal.** Implemented by comparing `e.target === dialogRef.current` (clicks on backdrop bubble up from the dialog itself, while clicks on inner content have child targets). No custom event-listener-on-document pattern.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F07 files | none |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` / `innerHTML` / `outerHTML` | none |
+| `localStorage` / `sessionStorage` | none |
+| Direct DB access from client components | none — all data flows from server page → client component as props |
+| Client component reads session / auth | none |
+| `parseMonthParam` range-checks | ✅ year 1900-9999, month 1-12 |
+| ARIA roles on grid + dialog | ✅ `role="grid"`, `aria-label="… calendar"`, `aria-labelledby` on dialog |
+
+### Acceptance verification
+
+Live dev-server smoke test:
+
+| Scenario | Expected | Observed |
+|------|----------|----------|
+| `/events?view=calendar` | 7-col Sun-Sat grid for May 2026 | 7 day-of-week headers + 42 day cells ✓ |
+| Today button | reset URL to today's month | Today link href clears `?month=` ✓ |
+| `?month=2026-04` | April 2026 grid with Easter events | "Easter Musical Night", "Good Friday Service", "Easter Sunday" all render in HTML ✓ |
+| `?month=hax or '1'='1` | graceful fallback to today | HTTP 200, May 2026 grid renders ✓ |
+| `<dialog>` element in DOM | exactly one (shared modal) | 1 ✓ |
+| ARIA on grid | `role="grid"` + month-aware label | both present ✓ |
+| List view still works | filter bar, past stack, all 25 events | confirmed ✓ |
+
+### Carry-over from F01–F06
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 

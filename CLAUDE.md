@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 2 (Public Pages — F07 next up)
-- **Current Feature:** F07 — Calendar Month Grid View (next up)
+- **Current Phase:** 2 (Public Pages — F08 next up)
+- **Current Feature:** F08 — Departments Page (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F06 (Calendar List View) shipped. Server-side query helpers in lib/cem/events.ts (tenant-scoped, parameterized, with SQL LIKE meta-char escaping + 200-char search cap). EventRow / MonthSection / PastStack / FilterBar / ViewToggle / EmptyState components. Filter state lives in URL (?q, ?type, ?dept) for shareable links + back-button support. All 25 seed events render in the live HTML; search, type filter, department filter, empty state, past-stack accordion, and view toggle all working. Type-only `lib/cem/types.ts` extracted so client components can import shared types without pulling in server-only modules. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F07 (Calendar Month Grid View) shipped. 7-col Sun-Sat grid, prev/next/Today nav, prev-month overflow days dimmed, today's day-number rendered as a brand-color circle. Event chips on day cells use the type colors (teal/purple/black). Clicking a chip opens an Event Detail Modal built on the native HTML `<dialog>` element — focus trap, Esc-to-close, body scroll-lock, return-focus-to-trigger, and ARIA semantics all come for free. Month nav state in URL (`?month=YYYY-MM`); malformed values fall back to today's month with no crash. List view from F06 still works untouched. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -32,6 +32,7 @@
 | F04 | Design System (Shadcn + Cal.com) | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tailwind CSS v4 with `@theme` registration of all PRD Section 6 tokens. Cal Sans + Inter via `next/font/google` (self-hosted, no CDN load at runtime). next-themes class-based dark mode + sun/moon toggle. CSP header added to next.config.ts (11 directives). Existing pages re-styled with Cal tokens. `/design-tokens` demo route renders every token in light + dark for visual QA. Cal Sans only ships weight 400 on Google Fonts; weights 500-600 fall back to synthesised — visually fine at display size, see Architecture Decision #3. |
 | F05 | Navigation Bar | 2026-05-08 | ✅ Yes (0 C / 0 H) | Sticky 52px nav with logo, 4 always-on links + role-conditional Dashboard, theme toggle, role badge, notification bell placeholder, logout (form POST), Sign-in button for anon. Active state via usePathname (2px brand underline + weight 600). Built as server component → role decisions never reach the client bundle. Verified anon HTML leaks zero role hints. 7 CEM stub pages added so nav links resolve. Root redirects to /events. |
 | F06 | Calendar — List View | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tenant-scoped server query in `lib/cem/events.ts` with parameterized search (Drizzle `ilike`, LIKE meta-chars escaped, 200-char cap). EventRow / MonthSection / PastStack / FilterBar / ViewToggle / EmptyState. Filter state in URL (?q, ?type, ?dept) so views are shareable + back-button works. All 25 seed events confirmed in live HTML; type filter narrows correctly; empty state + view toggle stub for F07 working. Type-only `lib/cem/types.ts` lets client components import shared shapes without pulling server-only code. |
+| F07 | Calendar — Month Grid View | 2026-05-08 | ✅ Yes (0 C / 0 H) | 7-col Sun-Sat grid via `monthGridCells()` (prev-month + current + next-month overflow). Day cells: 90px min-height, today highlighted with brand-color circle, outside-month cells dimmed with cal-bg-subtle background. Event chips with white text on type-color background. EventDetailModal built on native `<dialog>` — focus trap, Esc, scroll-lock, ARIA, return-focus all free. Month nav via URL (`?month=YYYY-MM`); `parseMonthParam` range-checks year (1900-9999) and month (1-12). Malformed input falls back to today's month, never crashes. |
 
 ---
 
@@ -41,7 +42,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F06 complete; F07 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
+| –  | –       | (idle — F07 complete; F08 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
 
 ---
 
@@ -51,8 +52,7 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F07 | Calendar — Month Grid View       | 2     | F06 ✅           |
-| F08 | Departments Page                 | 2     | F05              |
+| F08 | Departments Page                 | 2     | F05 ✅           |
 | F09 | Holidays Page                    | 2     | F06              |
 | F10 | Birthdays — Public View          | 3     | F05, F06         |
 | F11 | Birthday Self-Service            | 3     | F10              |
@@ -222,6 +222,7 @@
 | F04     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. CSP header added with 11 directives (default-src, script-src, style-src, img-src, font-src, connect-src, frame-ancestors, base-uri, form-action, object-src, upgrade-insecure-requests in prod). Fonts self-hosted by `next/font/google` — no third-party CDN load at runtime. No new XSS surfaces (no `dangerouslySetInnerHTML`, no inline style strings from user input). 6 Medium npm-audit carry-over (unchanged). Production build green; all 7 routes including new `/design-tokens` verified. |
 | F05     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. NavBar is a server component → role decisions never enter the client bundle. Anonymous HTML verified to contain zero "Dashboard" / role-label leakage. Logout uses form POST (not GET link) → can't be triggered by prefetch / image / spider. Client components (NavLink, NotificationBell, RoleBadge) take no session data — RoleBadge receives a typed `role` prop, NavLink only reads `usePathname()`. 6 Medium npm-audit carry-over (unchanged). |
 | F06     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Tenant-scoped queries (every cem_events / cem_departments select includes WHERE tenant_id = ?). Drizzle `ilike` for search, with SQL LIKE meta-chars (\, %, _) escaped before interpolation. Search input length capped at 200 chars both server-side (slice in events.ts) and client-side (maxLength=200). `lib/cem/events.ts` marked `import "server-only"` — client components can't accidentally pull DB code. Type-only module `lib/cem/types.ts` lets client components share shapes safely. 6 Medium npm-audit carry-over. |
+| F07     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. No new DB queries (events come pre-filtered from F06 helper). `parseMonthParam` range-checks year (1900-9999) and month (1-12) before parsing — malicious values return null and the page falls back to today's month rather than crashing. Modal built on native `<dialog>` so focus trap / Esc / ARIA / scroll-lock are browser-managed (no custom JS surface to audit). All event content rendered through React text nodes (auto-escaped). 6 Medium npm-audit carry-over. |
 
 ---
 
