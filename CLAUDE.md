@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 1 (Foundation)
-- **Current Feature:** F04 — Design System (next up; F03 complete pending end-to-end login test once `SUPABASE_SERVICE_ROLE_KEY` is provided)
+- **Current Phase:** 2 (Public Pages — F05 next up)
+- **Current Feature:** F05 — Navigation Bar (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F03 (Authentication) shipped. Supabase Auth wired up via `@supabase/ssr` (server / browser / admin clients). Login page with password + magic-link, logout endpoint + action, /no-access page, requireAuth() guard, session bridge to checkAccess(). Middleware now refreshes Supabase cookies on every request. RLS policies enabled on all 16 tables (closes Known Issue #2 from F02), with `cem_audit_log` already locked to INSERT-only at the DB level. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F04 (Design System) shipped. Tailwind CSS v4 with `@theme` registration of all PRD Section 6 tokens. Cal Sans + Inter via `next/font/google` (self-hosted, no third-party load). next-themes class-based dark mode with sun/moon toggle. CSP header now in place with full directive set. Existing pages (/, /login, /no-access) re-styled with Cal tokens. New `/design-tokens` demo route renders every token in light + dark mode for visual QA. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -29,6 +29,7 @@
 | F01 | Database + ORM | 2026-05-07 | ✅ Yes (0 C / 0 H) | 16 tables on Supabase eu-central-1. Seed verified: 25 events, 21 holidays, 7 requests, 15 birthdays, 6 unmapped, 18 users, 6 departments, 1 tenant + app. See `SECURITY_TEST_REPORT.md`. |
 | F02 | Tenant Middleware | 2026-05-08 | ✅ Yes (0 C / 0 H) | `lib/tenant.ts` (3 cached lookup helpers), `lib/auth/access.ts` (`checkAccess`), `middleware.ts` (subdomain + custom-domain resolution + header sanitisation). Bumped Next to 15.5.18 for typed Node middleware runtime. End-to-end tested against 6 host scenarios. RLS policies deferred to F03 per Known Issue #2. |
 | F03 | Authentication | 2026-05-08 | ✅ Yes (0 C / 0 H) | Supabase Auth via `@supabase/ssr`. Login page (password + magic link), logout endpoint + action, /no-access page, `getSession()` + `requireAuth()` guards, middleware now refreshes Supabase cookies. RLS policies on all 16 tables (closes KI #2). `cem_audit_log` is INSERT-only at the DB level (closes part of F18's checkpoint early). End-to-end "log in as demo user" test pending `SUPABASE_SERVICE_ROLE_KEY` — all surrounding routes verified. |
+| F04 | Design System (Shadcn + Cal.com) | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tailwind CSS v4 with `@theme` registration of all PRD Section 6 tokens. Cal Sans + Inter via `next/font/google` (self-hosted, no CDN load at runtime). next-themes class-based dark mode + sun/moon toggle. CSP header added to next.config.ts (11 directives). Existing pages re-styled with Cal tokens. `/design-tokens` demo route renders every token in light + dark for visual QA. Cal Sans only ships weight 400 on Google Fonts; weights 500-600 fall back to synthesised — visually fine at display size, see Architecture Decision #3. |
 
 ---
 
@@ -38,7 +39,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F03 functional code complete; pending `SUPABASE_SERVICE_ROLE_KEY` for end-to-end demo-user login test) | – |
+| –  | –       | (idle — F04 complete; F05 next up; F03 still pending end-to-end demo-user login test once `SUPABASE_SERVICE_ROLE_KEY` is provided) | – |
 
 ---
 
@@ -48,8 +49,7 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F04 | Design System (Shadcn + Cal.com) | 1     | None (parallel)  |
-| F05 | Navigation Bar                   | 2     | F03, F04         |
+| F05 | Navigation Bar                   | 2     | F03 ✅, F04 ✅   |
 | F06 | Calendar — List View             | 2     | F04, F05         |
 | F07 | Calendar — Month Grid View       | 2     | F06              |
 | F08 | Departments Page                 | 2     | F05              |
@@ -192,6 +192,12 @@
 2. **2026-05-07 — Holiday type classification follows the prototype, not the PRD's count breakdown.**
    PRD Section 15 says *"21 holidays (Berlin 2026: 10 public, 6 church, 5 special)"*. The prototype's `HOLIDAYS` array, which Section 15 also instructs us to use as seed data verbatim, classifies them as 10 public / 8 church / 3 special. The two data points conflict. I followed the prototype because it's the canonical visual reference and because the type counts are not load-bearing for any feature — only the names and dates are. If we later decide the PRD's split is correct, we'll move 2 holidays from `church` to `special` (Reformation Day and 1st Advent are the most defensible moves: neither is a Berlin holy-day-of-obligation). Tracked in Known Issues.
 
+3. **2026-05-08 — Cal Sans loaded at single weight (400) from Google Fonts.**
+   PRD Section 6 specifies headings at weight 500. Cal Sans on Google Fonts ships only weight 400 — no 500/600/700 variants. We accepted this for v1 because the visual difference between weight 400 and 500 in a geometric display sans like Cal Sans is negligible at the display sizes we use it (28px / 20px). CSS `font-weight: 500` causes the browser to synthesise a slightly heavier weight. If the look becomes a problem, we'll switch to self-hosting the multi-weight `CalSans-SemiBold.woff2` from `github.com/calcom/sans` (SIL OFL licensed) via `next/font/local`.
+
+4. **2026-05-08 — Tailwind CSS v4 (CSS-first `@theme`) instead of v3 (JS config).**
+   Tailwind v4 lets us register all PRD Section 6 tokens directly in `app/globals.css` via `@theme inline { --color-cal-bg: var(--cal-bg); ... }`, which keeps the Cal.com canonical token names, the Shadcn UI compatibility aliases (`--background`, `--primary`, etc.), and the Tailwind utility names all in one file. v3 would have required maintaining the same mapping in both `globals.css` and `tailwind.config.ts`. No `tailwind.config.{ts,js}` file exists by design.
+
 ---
 
 ## Known Issues
@@ -213,6 +219,7 @@
 | F01     | 2026-05-07 | 0        | 0    | 6      | 1   | ✅ PASS — 1 High found and fixed (drizzle-orm SQLi → bumped to ^0.45.2). 6 Medium are transitive npm-audit dev-time issues with no upstream fix; documented in `SECURITY_TEST_REPORT.md`. 1 Low is the demo seed password (acceptable per file header). |
 | F02     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Defense-in-depth additions: header-spoof sanitisation, UUID shape validation, reserved-subdomain allowlist, 308 canonical-host redirect. 6 Medium npm-audit findings carry over from F01 (unchanged). End-to-end verified against 6 host scenarios. |
 | F03     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS (subject to end-to-end demo login test pending key) — Zero new findings. Defense-in-depth additions: safeNextPath() for redirect validation, generic auth error messages (no user enumeration), shouldCreateUser=false on magic links, GET-on-logout returns 405, server-side role check post-signin. RLS now on all 16 tables (closes Known Issue #2). 6 Medium npm-audit carry-over (unchanged). Login/no-access/logout routes verified live; production build green. |
+| F04     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. CSP header added with 11 directives (default-src, script-src, style-src, img-src, font-src, connect-src, frame-ancestors, base-uri, form-action, object-src, upgrade-insecure-requests in prod). Fonts self-hosted by `next/font/google` — no third-party CDN load at runtime. No new XSS surfaces (no `dangerouslySetInnerHTML`, no inline style strings from user input). 6 Medium npm-audit carry-over (unchanged). Production build green; all 7 routes including new `/design-tokens` verified. |
 
 ---
 

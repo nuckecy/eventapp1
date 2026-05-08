@@ -1,9 +1,76 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F03)
+**Latest run:** 2026-05-08 (F04)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F04 — Design System (2026-05-08)
+
+**Files audited:**
+`lib/utils.ts`, `lib/fonts.ts`, `components/theme-provider.tsx`, `components/theme-toggle.tsx`, `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/login/page.tsx`, `app/login/LoginForms.tsx`, `app/no-access/page.tsx`, `app/design-tokens/page.tsx`, `components.json`, `postcss.config.mjs`, `next.config.ts`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F04 acceptance.** Defense-in-depth was strengthened (CSP header now present); no new attack surface introduced.
+
+### Verified controls (F04 security checkpoint per CLAUDE.md)
+
+- [x] **No external font loading from untrusted CDNs.** Cal Sans + Inter are loaded via `next/font/google`, which Next.js self-hosts at build time. At runtime no font files are fetched from a third-party domain. Verified by grep for `fonts.googleapis.com`, `fonts.gstatic.com`, `cdn.jsdelivr`, `unpkg.com` — no hits.
+- [x] **Content-Security-Policy allows font sources.** `font-src 'self' data:` covers self-hosted fonts plus base64 fallback inlining.
+
+### Defense-in-depth additions (this feature)
+
+- **Content-Security-Policy header now present** (`next.config.ts`). 11 directives:
+  - `default-src 'self'`
+  - `script-src 'self' 'unsafe-inline'` (+ `'unsafe-eval'` only in dev for HMR)
+  - `style-src 'self' 'unsafe-inline'` (Radix UI + Shadcn require inline styles)
+  - `img-src 'self' data: blob: https://*.supabase.co`
+  - `font-src 'self' data:`
+  - `connect-src 'self' https://*.supabase.co wss://*.supabase.co`
+  - `frame-ancestors 'none'` (prevents clickjacking)
+  - `base-uri 'self'`
+  - `form-action 'self'`
+  - `object-src 'none'`
+  - `upgrade-insecure-requests` (prod only)
+- **`disableTransitionOnChange`** on the next-themes provider prevents a brief flash of mis-matched colors during dark-mode toggle (UX hardening).
+- **`prefers-reduced-motion` respected** in `globals.css` — animations drop to 0.001ms (PRD Section 7.6 rule 4).
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F04 files | none |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` for sensitive data | none — next-themes stores theme preference only |
+| External font CDN | none — fonts self-hosted by next/font |
+| CSP completeness (≥10 directives) | ✅ 11 directives |
+
+### Acceptance verification
+
+| Route | Expected | Observed |
+|------|----------|----------|
+| `/` (root) | placeholder, Cal-styled | 200 OK, "Bootstrapping" copy renders ✓ |
+| `/design-tokens` | renders all tokens, badges, buttons, stats row | 200 OK, "Design tokens" + "--cal-bg" + "StatsRow" all present ✓ |
+| `/login` | password + magic-link forms, Cal-styled | 200 OK, both form headings present ✓ |
+| `/no-access` | denial copy, sign-out button | 200 OK ✓ |
+| CSP header on `/` | full directive set | full 11-directive policy returned ✓ |
+| Production build (`next build`) | succeeds with all 7 routes | clean build, 9 static pages generated ✓ |
+| TypeScript strict | 0 errors | 0 errors ✓ |
+
+### Carry-over from F01-F03
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged. Documented and accepted in the F01 section below.
 
 ---
 

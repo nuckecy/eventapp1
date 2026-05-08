@@ -1,0 +1,252 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Cal.com Pure Theme — PRD Section 6
+ *
+ * Two layers of tokens:
+ *
+ *  1. `--cal-*`  — the canonical Cal.com tokens. Anything custom in this
+ *                  app references these.
+ *  2. `--*`      — Shadcn-compatible aliases (--background, --primary,
+ *                  etc.) mapped onto the Cal palette so Shadcn UI
+ *                  components inherit Cal colors automatically rather
+ *                  than the default neutral grays.
+ *
+ * Dark mode is class-based (`.dark` on `<html>`), driven by next-themes.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+:root {
+  /* ── Light mode: Cal.com canonical tokens ─────────────────────── */
+  --cal-bg: #ffffff;
+  --cal-bg-subtle: #f9fafb;
+  --cal-bg-muted: #f3f4f6;
+  --cal-bg-emphasis: #e5e7eb;
+  --cal-bg-inverted: #111827;
+  --cal-text: #111827;
+  --cal-text-secondary: #6b7280;
+  --cal-text-muted: #9ca3af;
+  --cal-border: #e5e7eb;
+  --cal-border-subtle: #f3f4f6;
+  --cal-brand: #111827;
+  --cal-accent: #2563eb;
+  --cal-card-bg: #ffffff;
+
+  /* ── Event type colors ────────────────────────────────────────── */
+  --cal-event-sunday: #0d9488;
+  --cal-event-regional: #7c3aed;
+  --cal-event-local: #111827;
+
+  /* ── Status badge colors ──────────────────────────────────────── */
+  --cal-status-draft-bg: #f9fafb;
+  --cal-status-draft-text: #4b5563;
+  --cal-status-draft-border: #d1d5db;
+  --cal-status-submitted-bg: #f0f9ff;
+  --cal-status-submitted-text: #0c4a6e;
+  --cal-status-submitted-border: #bae6fd;
+  --cal-status-review-bg: #fefce8;
+  --cal-status-review-text: #854d0e;
+  --cal-status-review-border: #fde68a;
+  --cal-status-ready-bg: #f0fdf4;
+  --cal-status-ready-text: #166534;
+  --cal-status-ready-border: #bbf7d0;
+  --cal-status-approved-bg: #f0fdf4;
+  --cal-status-approved-text: #166534;
+  --cal-status-approved-border: #86efac;
+  --cal-status-returned-bg: #fef2f2;
+  --cal-status-returned-text: #991b1b;
+  --cal-status-returned-border: #fecaca;
+  --cal-status-deleted-bg: #fef2f2;
+  --cal-status-deleted-text: #991b1b;
+  --cal-status-deleted-border: #fca5a5;
+
+  /* ── Holiday type colors ──────────────────────────────────────── */
+  --cal-holiday-public-text: #dc2626;
+  --cal-holiday-public-bg: #fef2f2;
+  --cal-holiday-public-border: #fecaca;
+  --cal-holiday-church-text: #7c3aed;
+  --cal-holiday-church-bg: #f5f3ff;
+  --cal-holiday-church-border: #ddd6fe;
+  --cal-holiday-special-text: #d97706;
+  --cal-holiday-special-bg: #fffbeb;
+  --cal-holiday-special-border: #fde68a;
+
+  /* ── Landmark birthday tiers ──────────────────────────────────── */
+  --cal-landmark-young-text: #1e40af;
+  --cal-landmark-young-bg: #eff6ff;
+  --cal-landmark-young-border: #bfdbfe;
+  --cal-landmark-senior-text: #166534;
+  --cal-landmark-senior-bg: #f0fdf4;
+  --cal-landmark-senior-border: #bbf7d0;
+
+  /* ── Shadcn UI aliases mapped onto Cal palette ────────────────── */
+  --background: var(--cal-bg);
+  --foreground: var(--cal-text);
+  --card: var(--cal-card-bg);
+  --card-foreground: var(--cal-text);
+  --popover: var(--cal-card-bg);
+  --popover-foreground: var(--cal-text);
+  --primary: var(--cal-brand);          /* grayscale, NOT blue */
+  --primary-foreground: #ffffff;
+  --secondary: var(--cal-bg-muted);
+  --secondary-foreground: var(--cal-text);
+  --muted: var(--cal-bg-subtle);
+  --muted-foreground: var(--cal-text-secondary);
+  --accent: var(--cal-bg-muted);
+  --accent-foreground: var(--cal-text);
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: var(--cal-border);
+  --input: var(--cal-border);
+  --ring: var(--cal-accent);            /* blue focus rings */
+  --radius: 0.5rem;                     /* 8px — PRD button/card radius */
+
+  /* Used by Shadcn charts (for completeness) */
+  --chart-1: var(--cal-event-sunday);
+  --chart-2: var(--cal-event-regional);
+  --chart-3: var(--cal-event-local);
+  --chart-4: var(--cal-accent);
+  --chart-5: var(--cal-text-secondary);
+}
+
+.dark {
+  /* ── Dark mode: Cal.com canonical tokens ──────────────────────── */
+  --cal-bg: #101010;
+  --cal-bg-subtle: #1c1c1c;
+  --cal-bg-muted: #2b2b2b;
+  --cal-bg-emphasis: #3b3b3b;
+  --cal-bg-inverted: #f3f4f6;
+  --cal-text: #f3f4f6;
+  --cal-text-secondary: #9ca3af;
+  --cal-text-muted: #6b7280;
+  --cal-border: #2b2b2b;
+  --cal-border-subtle: #1c1c1c;
+  --cal-brand: #f3f4f6;
+  --cal-accent: #2563eb;
+  --cal-card-bg: #1c1c1c;
+
+  /* Event type, status, holiday, and landmark colors stay the same in
+     dark mode per PRD Section 17 ("Event type colors remain unchanged
+     in dark mode"). */
+
+  /* Re-map Shadcn aliases for dark. */
+  --background: var(--cal-bg);
+  --foreground: var(--cal-text);
+  --card: var(--cal-card-bg);
+  --card-foreground: var(--cal-text);
+  --popover: var(--cal-card-bg);
+  --popover-foreground: var(--cal-text);
+  --primary: var(--cal-brand);
+  --primary-foreground: #101010;
+  --secondary: var(--cal-bg-muted);
+  --secondary-foreground: var(--cal-text);
+  --muted: var(--cal-bg-subtle);
+  --muted-foreground: var(--cal-text-secondary);
+  --accent: var(--cal-bg-muted);
+  --accent-foreground: var(--cal-text);
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: var(--cal-border);
+  --input: var(--cal-border);
+  --ring: var(--cal-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Tailwind v4 theme registration
+ *
+ * Expose the tokens so they're available as Tailwind utilities
+ * (e.g. `bg-cal-bg`, `text-cal-text-muted`, `border-cal-border`,
+ * `bg-event-sunday`, etc.).
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+@theme inline {
+  /* Shadcn aliases (for default Shadcn classes like `bg-primary`,
+     `text-foreground`, etc.) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Cal.com canonical names — for utilities like `bg-cal-bg-subtle` */
+  --color-cal-bg: var(--cal-bg);
+  --color-cal-bg-subtle: var(--cal-bg-subtle);
+  --color-cal-bg-muted: var(--cal-bg-muted);
+  --color-cal-bg-emphasis: var(--cal-bg-emphasis);
+  --color-cal-bg-inverted: var(--cal-bg-inverted);
+  --color-cal-text: var(--cal-text);
+  --color-cal-text-secondary: var(--cal-text-secondary);
+  --color-cal-text-muted: var(--cal-text-muted);
+  --color-cal-border: var(--cal-border);
+  --color-cal-border-subtle: var(--cal-border-subtle);
+  --color-cal-brand: var(--cal-brand);
+  --color-cal-accent: var(--cal-accent);
+  --color-cal-card-bg: var(--cal-card-bg);
+
+  /* Event type swatches */
+  --color-event-sunday: var(--cal-event-sunday);
+  --color-event-regional: var(--cal-event-regional);
+  --color-event-local: var(--cal-event-local);
+
+  /* Fonts */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-cal-sans), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Base resets + page defaults
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html, body {
+    height: 100%;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Headings use Cal Sans, max weight 500 per PRD typography rules. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: var(--cal-text);
+    letter-spacing: -0.01em;
+  }
+  /* Respect prefers-reduced-motion (PRD Section 7.6 rule 4). */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

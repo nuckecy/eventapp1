@@ -51,24 +51,15 @@ export default async function LoginPage({
         : null;
 
   return (
-    <main style={{ padding: 48, fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Sign in</h1>
-      <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 24, fontSize: 14 }}>
+    <main className="mx-auto flex min-h-screen max-w-[480px] flex-col justify-center px-6 py-12">
+      <h1 className="font-display text-[28px] font-medium leading-tight">Sign in</h1>
+      <p className="mb-7 mt-1 text-[13px] text-cal-text-secondary">
         Church Event Management
       </p>
       {callbackError ? (
         <p
           role="alert"
-          style={{
-            color: "#991b1b",
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
-            padding: "8px 12px",
-            borderRadius: 6,
-            fontSize: 13,
-            marginBottom: 16,
-            maxWidth: 360,
-          }}
+          className="mb-4 max-w-[360px] rounded-lg border border-[color:var(--cal-status-deleted-border)] bg-[color:var(--cal-status-deleted-bg)] px-3 py-2 text-[12px] text-[color:var(--cal-status-deleted-text)]"
         >
           {callbackError}
         </p>
