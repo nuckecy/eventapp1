@@ -1,18 +1,26 @@
-// Tenant resolution middleware.
+// Tenant resolution + Supabase session refresh middleware.
 //
-// Per PRD Section 3 ("Middleware: Tenant Resolution"). Runs on every
-// non-static request. Resolves the tenant from the request hostname
-// (custom domain first, then subdomain) and injects three headers for
-// downstream layouts and route handlers:
+// Per PRD Section 3 ("Middleware: Tenant Resolution") and Supabase
+// SSR docs ("Refresh session in middleware"). Runs on every non-static
+// request and does two things:
 //
-//   x-tenant-id     — UUID of the tenant
-//   x-tenant-slug   — short slug (e.g. "newsong")
-//   x-domain-type   — "subdomain" | "custom"
+//  1. **Tenant resolution.** Resolve the tenant from the request hostname
+//     (custom domain first, then subdomain) and inject three headers
+//     for downstream layouts and route handlers:
+//
+//       x-tenant-id     — UUID of the tenant
+//       x-tenant-slug   — short slug (e.g. "newsong")
+//       x-domain-type   — "subdomain" | "custom"
+//
+//  2. **Supabase session refresh.** Re-validate and rotate the
+//     Supabase auth cookie. Required by `@supabase/ssr`: without this,
+//     access tokens silently expire and users get logged out mid-flow.
 //
 // SECURITY:
 //
 // - Runs in the Node.js runtime so we can use Drizzle + postgres-js for
-//   tenant lookups. Edge runtime can't open TCP sockets to Postgres.
+//   tenant lookups and @supabase/ssr for session refresh. Edge runtime
+//   can't open TCP sockets to Postgres.
 // - **Header sanitisation:** the middleware unconditionally strips any
 //   incoming `x-tenant-*` and `x-domain-*` request headers before
 //   processing, so a crafted client request can never spoof tenant
@@ -21,12 +29,14 @@
 // - **No open redirects:** the only destinations are the platform domain
 //   (constant) or a primary custom domain looked up from the DB. User
 //   input never controls the redirect target.
-// - **Allowlisted reserved subdomains** (`api`, `custom`) bypass tenant
-//   resolution and pass through untouched. A request to e.g.
-//   `api.churchplatform.com` is platform-level, not tenant-scoped.
+// - **Allowlisted reserved subdomains** (`api`, `custom`, `www`) bypass
+//   tenant resolution and pass through untouched.
+// - **Session refresh uses `getUser()`** (re-validates against the Auth
+//   server), not `getSession()` (which only decodes the cookie).
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { lookupCustomDomain, lookupPrimaryDomain, lookupTenantBySlug } from "@/lib/tenant";
 
 const PLATFORM_DOMAIN = process.env.NEXT_PUBLIC_PLATFORM_DOMAIN ?? "churchplatform.com";
@@ -41,9 +51,7 @@ const PLATFORM_HOSTS = new Set<string>([
 // and must not be resolved as tenant slugs.
 const RESERVED_SUBDOMAINS = new Set<string>(["custom", "api", "www"]);
 
-// True when the request is local development. We accept any port and any
-// localhost-ish host so devs can use `lvh.me` (a public DNS that resolves
-// every name to 127.0.0.1) for subdomain testing.
+// True when the request is local development.
 function isLocalDev(hostname: string): boolean {
   const bareHost = hostname.split(":")[0];
   return (
@@ -56,84 +64,116 @@ function isLocalDev(hostname: string): boolean {
   );
 }
 
-function stripTenantHeaders(req: NextRequest): Headers {
+function stripTenantHeaders(headers: Headers): Headers {
   // Defense in depth: never let a client spoof the headers we inject.
-  const cleaned = new Headers(req.headers);
+  const cleaned = new Headers(headers);
   cleaned.delete("x-tenant-id");
   cleaned.delete("x-tenant-slug");
   cleaned.delete("x-domain-type");
   return cleaned;
 }
 
-function makeNext(req: NextRequest, opts?: { tenantId: string; tenantSlug: string; domainType: "subdomain" | "custom" }) {
-  const requestHeaders = stripTenantHeaders(req);
-  if (opts) {
-    requestHeaders.set("x-tenant-id", opts.tenantId);
-    requestHeaders.set("x-tenant-slug", opts.tenantSlug);
-    requestHeaders.set("x-domain-type", opts.domainType);
+// Refresh the Supabase session by reading + rewriting cookies on the
+// passed `response`. Mutates `response.cookies`.
+async function refreshSupabaseSession(request: NextRequest, response: NextResponse): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // Misconfigured env — not the middleware's job to surface this;
+    // server components will fail loudly when they try to use the
+    // client. Skip refresh.
+    return;
   }
-  return NextResponse.next({ request: { headers: requestHeaders } });
-}
 
-function platformRedirect(): NextResponse {
-  // Constant target — never user input. Open-redirect safe.
-  return NextResponse.redirect(`https://${PLATFORM_DOMAIN}`);
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll: () => request.cookies.getAll(),
+      setAll: (cookiesToSet) => {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
+  // Calling getUser() here is what triggers the cookie refresh in the
+  // SSR client. We don't act on the result; we just want the side
+  // effect.
+  await supabase.auth.getUser();
 }
 
 export async function middleware(request: NextRequest) {
-  // `host` already excludes credentials/scheme. May contain a port.
   const hostname = (request.headers.get("host") ?? "").toLowerCase();
 
-  // ── Skip platform-level routes (incl. local dev) ──────────────────
-  if (PLATFORM_HOSTS.has(hostname) || isLocalDev(hostname)) {
-    return makeNext(request);
-  }
+  // Build the request headers we'll forward to downstream handlers.
+  // Start by stripping any client-supplied tenant headers.
+  const forwardHeaders = stripTenantHeaders(request.headers);
 
-  // ── 1. Custom domain check ────────────────────────────────────────
-  // A request whose host doesn't end with `.${PLATFORM_DOMAIN}` is
-  // either a custom tenant domain (e.g. newsongberlin.org) or unknown.
-  if (!hostname.endsWith(`.${PLATFORM_DOMAIN}`)) {
+  // ── 0. Decide the tenant context ─────────────────────────────────
+  let tenantContext: { tenantId: string; tenantSlug: string; domainType: "subdomain" | "custom" } | null = null;
+  let earlyResponse: NextResponse | null = null;
+
+  if (PLATFORM_HOSTS.has(hostname) || isLocalDev(hostname)) {
+    // Pass through; no tenant.
+  } else if (!hostname.endsWith(`.${PLATFORM_DOMAIN}`)) {
+    // Custom domain branch.
     const tenantDomain = await lookupCustomDomain(hostname);
     if (tenantDomain?.verified && tenantDomain?.ssl_provisioned) {
-      return makeNext(request, {
+      tenantContext = {
         tenantId: tenantDomain.tenant_id,
         tenantSlug: tenantDomain.tenant_slug,
         domainType: "custom",
-      });
+      };
+    } else {
+      earlyResponse = NextResponse.redirect(`https://${PLATFORM_DOMAIN}`);
     }
-    // Domain not recognised, not verified, or SSL not provisioned.
-    return platformRedirect();
+  } else {
+    // Subdomain branch.
+    const subdomain = hostname.replace(`.${PLATFORM_DOMAIN}`, "").split(":")[0];
+    if (!RESERVED_SUBDOMAINS.has(subdomain)) {
+      const tenant = await lookupTenantBySlug(subdomain);
+      if (!tenant) {
+        earlyResponse = NextResponse.redirect(`https://${PLATFORM_DOMAIN}`);
+      } else {
+        const primary = await lookupPrimaryDomain(tenant.id);
+        if (primary && hostname !== primary.domain) {
+          const url = new URL(request.url);
+          url.hostname = primary.domain;
+          url.port = "";
+          // 308 (Permanent Redirect) preserves method.
+          earlyResponse = NextResponse.redirect(url.toString(), 308);
+        } else {
+          tenantContext = {
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            domainType: "subdomain",
+          };
+        }
+      }
+    }
   }
 
-  // ── 2. Subdomain check ────────────────────────────────────────────
-  const subdomain = hostname.replace(`.${PLATFORM_DOMAIN}`, "").split(":")[0];
-
-  if (RESERVED_SUBDOMAINS.has(subdomain)) {
-    return makeNext(request);
+  // If we're redirecting (unknown subdomain, unverified custom domain,
+  // primary-domain canonical redirect), do NOT refresh the session —
+  // the response is a redirect and downstream code never sees it.
+  if (earlyResponse) {
+    return earlyResponse;
   }
 
-  const tenant = await lookupTenantBySlug(subdomain);
-  if (!tenant) return platformRedirect();
-
-  // ── 3. Optional redirect to primary custom domain ─────────────────
-  // If the tenant has chosen a primary custom domain and the user is
-  // arriving via the default subdomain, redirect them. This keeps the
-  // canonical URL clean.
-  const primary = await lookupPrimaryDomain(tenant.id);
-  if (primary && hostname !== primary.domain) {
-    const url = new URL(request.url);
-    url.hostname = primary.domain;
-    url.port = "";
-    // 308 (Permanent Redirect) preserves the HTTP method and is the
-    // correct status for a canonical-host policy.
-    return NextResponse.redirect(url.toString(), 308);
+  // ── 1. Inject tenant headers on the forwarded request ────────────
+  if (tenantContext) {
+    forwardHeaders.set("x-tenant-id", tenantContext.tenantId);
+    forwardHeaders.set("x-tenant-slug", tenantContext.tenantSlug);
+    forwardHeaders.set("x-domain-type", tenantContext.domainType);
   }
 
-  return makeNext(request, {
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-    domainType: "subdomain",
+  // ── 2. Build the response and refresh the Supabase session ───────
+  const response = NextResponse.next({
+    request: { headers: forwardHeaders },
   });
+  await refreshSupabaseSession(request, response);
+
+  return response;
 }
 
 export const config = {

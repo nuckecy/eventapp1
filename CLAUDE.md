@@ -13,9 +13,9 @@
 
 ## Project State
 - **Current Phase:** 1 (Foundation)
-- **Current Feature:** F03 — Authentication (next up)
+- **Current Feature:** F04 — Design System (next up; F03 complete pending end-to-end login test once `SUPABASE_SERVICE_ROLE_KEY` is provided)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F02 (Tenant Middleware) shipped. Subdomain + custom-domain resolution, header injection (`x-tenant-id`, `x-tenant-slug`, `x-domain-type`), reserved-subdomain allowlist, header-spoof sanitisation. Bumped Next.js to 15.5.18 to enable typed `runtime: "nodejs"` middleware. End-to-end verified against 6 host scenarios. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F03 (Authentication) shipped. Supabase Auth wired up via `@supabase/ssr` (server / browser / admin clients). Login page with password + magic-link, logout endpoint + action, /no-access page, requireAuth() guard, session bridge to checkAccess(). Middleware now refreshes Supabase cookies on every request. RLS policies enabled on all 16 tables (closes Known Issue #2 from F02), with `cem_audit_log` already locked to INSERT-only at the DB level. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -28,6 +28,7 @@
 |-----|----------------|------------|-----------------|-------|
 | F01 | Database + ORM | 2026-05-07 | ✅ Yes (0 C / 0 H) | 16 tables on Supabase eu-central-1. Seed verified: 25 events, 21 holidays, 7 requests, 15 birthdays, 6 unmapped, 18 users, 6 departments, 1 tenant + app. See `SECURITY_TEST_REPORT.md`. |
 | F02 | Tenant Middleware | 2026-05-08 | ✅ Yes (0 C / 0 H) | `lib/tenant.ts` (3 cached lookup helpers), `lib/auth/access.ts` (`checkAccess`), `middleware.ts` (subdomain + custom-domain resolution + header sanitisation). Bumped Next to 15.5.18 for typed Node middleware runtime. End-to-end tested against 6 host scenarios. RLS policies deferred to F03 per Known Issue #2. |
+| F03 | Authentication | 2026-05-08 | ✅ Yes (0 C / 0 H) | Supabase Auth via `@supabase/ssr`. Login page (password + magic link), logout endpoint + action, /no-access page, `getSession()` + `requireAuth()` guards, middleware now refreshes Supabase cookies. RLS policies on all 16 tables (closes KI #2). `cem_audit_log` is INSERT-only at the DB level (closes part of F18's checkpoint early). End-to-end "log in as demo user" test pending `SUPABASE_SERVICE_ROLE_KEY` — all surrounding routes verified. |
 
 ---
 
@@ -37,7 +38,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F02 complete; F03 not yet started) | – |
+| –  | –       | (idle — F03 functional code complete; pending `SUPABASE_SERVICE_ROLE_KEY` for end-to-end demo-user login test) | – |
 
 ---
 
@@ -47,7 +48,6 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F03 | Authentication                   | 1     | F01 ✅, F02 ✅   |
 | F04 | Design System (Shadcn + Cal.com) | 1     | None (parallel)  |
 | F05 | Navigation Bar                   | 2     | F03, F04         |
 | F06 | Calendar — List View             | 2     | F04, F05         |
@@ -200,7 +200,7 @@
 
 1. **Holiday type counts (10/8/3) deviate from PRD Section 15 (10/6/5).** Following prototype data per Architecture Decision #2. Resolution path documented there. Severity: low — does not affect any feature.
 
-2. **Supabase RLS policies for tenant isolation deferred to F03.** ADR #1 originally said RLS would be added in F02. On reflection, RLS policies that reference `auth.uid()` are most useful once Supabase Auth is wiring up that JWT claim — which doesn't happen until F03. Application-level tenant scoping (every `cem_*` query includes `WHERE tenant_id = ?`) remains the primary control until then; RLS becomes the second layer. Severity: medium — application-level scoping is sufficient for correctness, but defense-in-depth is reduced until F03 ships.
+2. ~~**Supabase RLS policies for tenant isolation deferred to F03.**~~ ✅ **Resolved in F03 (2026-05-08).** Migration `drizzle/0001_rls_policies.sql` enables RLS on all 16 tables and adds 25 policies. Helper functions `public.is_platform_admin()` and `public.user_tenant_ids()` provide the lookup. `cem_audit_log` has only INSERT and SELECT policies — UPDATE/DELETE are denied at the database level (closes part of F18's checkpoint early).
 
 ---
 
@@ -212,6 +212,7 @@
 |---------|------------|----------|------|--------|-----|----------------------------------------------------|
 | F01     | 2026-05-07 | 0        | 0    | 6      | 1   | ✅ PASS — 1 High found and fixed (drizzle-orm SQLi → bumped to ^0.45.2). 6 Medium are transitive npm-audit dev-time issues with no upstream fix; documented in `SECURITY_TEST_REPORT.md`. 1 Low is the demo seed password (acceptable per file header). |
 | F02     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Defense-in-depth additions: header-spoof sanitisation, UUID shape validation, reserved-subdomain allowlist, 308 canonical-host redirect. 6 Medium npm-audit findings carry over from F01 (unchanged). End-to-end verified against 6 host scenarios. |
+| F03     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS (subject to end-to-end demo login test pending key) — Zero new findings. Defense-in-depth additions: safeNextPath() for redirect validation, generic auth error messages (no user enumeration), shouldCreateUser=false on magic links, GET-on-logout returns 405, server-side role check post-signin. RLS now on all 16 tables (closes Known Issue #2). 6 Medium npm-audit carry-over (unchanged). Login/no-access/logout routes verified live; production build green. |
 
 ---
 

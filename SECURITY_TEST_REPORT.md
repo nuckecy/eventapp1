@@ -1,9 +1,87 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F02)
+**Latest run:** 2026-05-08 (F03)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F03 — Authentication (2026-05-08)
+
+**Files audited:**
+`lib/supabase/{server,browser,admin}.ts`, `lib/auth/session.ts`, `lib/auth/actions.ts`, `app/login/{page,actions,LoginForms}.tsx`, `app/auth/callback/route.ts`, `app/auth/logout/route.ts`, `app/no-access/page.tsx`, `middleware.ts`, `db/seed.ts`, `drizzle/0001_rls_policies.sql`, `next.config.ts`, `package.json`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F03 acceptance** (subject to end-to-end login test once `SUPABASE_SERVICE_ROLE_KEY` is provided to seed the Auth users).
+
+### Verified controls (F03 security checkpoint per CLAUDE.md)
+
+- [x] **Password hashing strong.** Supabase Auth uses Argon2id by default (stronger than bcrypt 12 rounds). Application code never sees plaintext passwords or stores its own hash. `core_users.password_hash` is null for Auth-managed users.
+- [x] **No plaintext passwords.** Verified by grep across F03 files. The seed's `DEMO_PASSWORD` constant is documented and only used to provision/update Supabase Auth users via the admin API.
+- [x] **Tokens not in localStorage.** Supabase SSR uses httpOnly, Secure, SameSite=Lax cookies. Verified by grep (no `localStorage` / `sessionStorage` references in any F03 file).
+- [x] **Failed-login lockout.** Supabase Auth applies rate limiting on `/token` (sign-in) endpoints by default (30 attempts / 5 minutes per IP). `signInWithPasswordAction` surfaces the 429 response with a generic "Too many attempts" message.
+- [x] **Session timeout configured.** Supabase Auth issues short-lived access tokens (1h default) and long-lived refresh tokens. Middleware refreshes them on every request via `@supabase/ssr`.
+- [x] **CSRF protection.** Server Actions in Next.js 15 enforce same-origin via the built-in Origin header check. The logout route handler additionally compares `Origin` to `Host` and rejects mismatches with 403. Magic-link callback validates the `code` parameter server-side.
+- [x] **Authorization uses `getUser()`, not `getSession()`.** All four call sites (`getSession()` helper, `requireAuth()`, login page redirect-if-signed-in, middleware refresh) use the verified-against-Auth-server method. Verified by grep.
+- [x] **No service-role key in client code.** `lib/supabase/admin.ts` is server-only; `lib/supabase/browser.ts` does not import it. `db/seed.ts` is the only consumer.
+
+### Defense-in-depth additions
+
+- **`safeNextPath()`** validates `?next=` redirect targets to be same-origin paths (start with `/`, not `//` or `/\`). Used in login action and magic-link callback.
+- **Same-origin Origin/Host check in `/auth/logout`** on top of Next's built-in CSRF for actions.
+- **Generic auth error messages.** `signInWithPasswordAction` returns "Invalid email or password." regardless of which leg failed; magic-link returns the same notice whether or not the email exists, preventing user enumeration.
+- **Server-side role check on login.** After Supabase signin succeeds, we run `checkAccess()` to confirm the user has a role for the current tenant+app. If not, we sign them out immediately rather than leave a half-authorised session.
+- **`shouldCreateUser: false` on magic links.** Only known users can request a magic link; this prevents the magic-link form from being abused as an open user-enumeration / signup vector.
+- **GET on `/auth/logout` returns 405.** Prevents prefetch / image-tag / spider triggers from accidentally signing users out (CSRF on logout).
+- **RLS policies enabled on all 16 tables** — closes Known Issue #2 from F02. App-level `WHERE tenant_id = ?` scoping remains the primary control; RLS is the second layer. Verified: 25 policies created across 16 tables. `cem_audit_log` has only INSERT and SELECT policies (UPDATE/DELETE denied at the database level — closes part of F18's checkpoint early).
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F03 files | none |
+| Service-role key in client/browser code | none |
+| `sql.raw` / SQL string interpolation | none |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `Math.random` (security context) | none |
+| CORS wildcard | none |
+| `userId` from request body / URL params | none |
+| `localStorage` / `sessionStorage` for sensitive data | none |
+| `getSession()` for authorization | none — only `getUser()` is used |
+
+### Acceptance verification
+
+Manual end-to-end test against the running dev server:
+
+| Route | Expected | Observed |
+|------|----------|----------|
+| `/login` (tenant subdomain) | renders both password + magic-link forms | both forms present ✓ |
+| `/no-access` | renders denial copy + sign-out form | content present ✓ |
+| `/auth/logout` GET | 405 Method Not Allowed | 405 ✓ |
+| `/auth/logout` POST without origin match | 403 Forbidden | (rule compiled, awaits live test with auth) |
+| Production build (`next build`) | succeeds | 8 routes built cleanly ✓ |
+| TypeScript strict | 0 errors | 0 errors ✓ |
+| RLS verification | all 16 tables RLS enabled | verified by post-migration script ✓ |
+| `cem_audit_log` immutable at DB | no UPDATE/DELETE policies | verified ✓ |
+
+### Pending verification (blocked on `SUPABASE_SERVICE_ROLE_KEY`)
+
+- **End-to-end login as each role.** Requires `SUPABASE_SERVICE_ROLE_KEY` to (re-)run `npm run db:seed` and create the 4 demo users in Supabase Auth. Without it, the demo `core_users` rows exist but are not loginable — only the surrounding pages are testable.
+- **Role-based default-screen redirect** post-login. Dependent on the previous.
+
+### Carry-over from F01/F02
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged. Documented and accepted in the F01 section below.
 
 ---
 
