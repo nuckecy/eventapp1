@@ -1,9 +1,74 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F04)
+**Latest run:** 2026-05-08 (F05)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F05 — Navigation Bar (2026-05-08)
+
+**Files audited:**
+`components/nav/nav-bar.tsx`, `components/nav/nav-link.tsx`, `components/notification-bell.tsx`, `components/role-badge.tsx`, `app/events/layout.tsx`, `app/events/page.tsx`, `app/events/{departments,holidays,birthdays,dashboard/lead,dashboard/admin,dashboard/super}/page.tsx`, `app/page.tsx`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F05 acceptance.**
+
+### Verified controls (F05 security checkpoint per CLAUDE.md)
+
+- [x] **No role information leaked in client-side HTML for unauthenticated users.** Verified by `grep` against the anon-user HTML from `/events`:
+  - `Dashboard` link occurrences: **0**
+  - Role-label occurrences (`Lead` / `Administrator` / `Super Admin` / `Member`): **0**
+  - `Sign in` button occurrences: **2** (header + page)
+  The NavBar is a server component, so role decisions never reach the client JS bundle either. The Dashboard link is conditionally rendered server-side based on `getSession()`, and isn't part of any client component.
+- [x] **Logout clears session completely.** Uses form POST to `/auth/logout` route handler (built in F03), which calls `supabase.auth.signOut()` and clears the session cookies. GET on the same path returns 405 (verified in F03 security report).
+
+### Defense-in-depth additions (this feature)
+
+- **Logout via form POST, not GET link.** Prevents prefetchers, image tags, browser extensions, and link-checking bots from inadvertently logging users out. The endpoint also validates Origin matches Host (added in F03).
+- **Client components receive only what they need.** `NavLink` reads `usePathname()` only; `NotificationBell` takes an optional `count: number`; `RoleBadge` takes a typed `role` prop. None imports a client-side Supabase client or makes any auth/session decision in the browser.
+- **Active link uses `aria-current="page"`** for accessibility (screen-reader users hear "current page" on the link).
+- **Backdrop blur on sticky NavBar** uses CSS `@supports` so older browsers fall back to a solid color rather than getting an unstyled element.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F05 files | none |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` | none |
+| Role decisions in client components | none — only server NavBar reads session; client components take typed props |
+| Logout via GET | none — uses form POST to /auth/logout |
+| Open-redirect / unsafe href construction | none — only constants and a switch helper for role → dashboard route |
+
+### Acceptance verification
+
+| Scenario | Expected | Observed |
+|------|----------|----------|
+| `/` | 307 → `/events` | 307 ✓ |
+| `/events` (anonymous) | NavBar with logo + 4 links + Sign-in button; NO Dashboard, NO role badge | All confirmed via curl + grep ✓ |
+| `/events/departments` (anonymous) | Departments link has `aria-current="page"` + active classes | Single match for `aria-current="page"` on the right link, with `border-cal-brand font-semibold text-cal-text` ✓ |
+| `/login`, `/no-access` | Render WITHOUT NavBar (full-screen auth flow) | "Church Events" not present on /login HTML ✓ |
+| `/events/dashboard/lead` | Renders (no auth gate yet — F14 will add) | 200 ✓ |
+| Production build | All 14 routes build clean | ✓ |
+| TypeScript strict | 0 errors | 0 errors ✓ |
+
+Pending verification (blocked on `SUPABASE_SERVICE_ROLE_KEY` from F03):
+- Dashboard link visibility for each role (Lead → /dashboard/lead, Admin → /admin, Super → /super, Member → no link). The conditional rendering is in place; smoke-test will be run when the seed can create logins via Supabase Auth.
+
+### Carry-over from F01–F04
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 

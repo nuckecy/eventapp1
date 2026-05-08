@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 2 (Public Pages — F05 next up)
-- **Current Feature:** F05 — Navigation Bar (next up)
+- **Current Phase:** 2 (Public Pages — F06 next up)
+- **Current Feature:** F06 — Calendar List View (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F04 (Design System) shipped. Tailwind CSS v4 with `@theme` registration of all PRD Section 6 tokens. Cal Sans + Inter via `next/font/google` (self-hosted, no third-party load). next-themes class-based dark mode with sun/moon toggle. CSP header now in place with full directive set. Existing pages (/, /login, /no-access) re-styled with Cal tokens. New `/design-tokens` demo route renders every token in light + dark mode for visual QA. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F05 (Navigation Bar) shipped. Sticky 52px nav with logo, Calendar/Departments/Holidays/Birthdays links, role-conditional Dashboard link (Lead → /dashboard/lead, Admin → /admin, Super → /super), theme toggle, role badge, notification bell placeholder, logout (form POST), and Sign-in button for anonymous visitors. Active-link state via usePathname + 2px brand underline + weight 600. Active-state verified live for /events/departments. Anonymous HTML verified to leak no role hints (zero "Dashboard" / role labels in anon-visited pages). All 7 CEM stub pages added so the nav links resolve. Root `/` now redirects to /events. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -30,6 +30,7 @@
 | F02 | Tenant Middleware | 2026-05-08 | ✅ Yes (0 C / 0 H) | `lib/tenant.ts` (3 cached lookup helpers), `lib/auth/access.ts` (`checkAccess`), `middleware.ts` (subdomain + custom-domain resolution + header sanitisation). Bumped Next to 15.5.18 for typed Node middleware runtime. End-to-end tested against 6 host scenarios. RLS policies deferred to F03 per Known Issue #2. |
 | F03 | Authentication | 2026-05-08 | ✅ Yes (0 C / 0 H) | Supabase Auth via `@supabase/ssr`. Login page (password + magic link), logout endpoint + action, /no-access page, `getSession()` + `requireAuth()` guards, middleware now refreshes Supabase cookies. RLS policies on all 16 tables (closes KI #2). `cem_audit_log` is INSERT-only at the DB level (closes part of F18's checkpoint early). End-to-end "log in as demo user" test pending `SUPABASE_SERVICE_ROLE_KEY` — all surrounding routes verified. |
 | F04 | Design System (Shadcn + Cal.com) | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tailwind CSS v4 with `@theme` registration of all PRD Section 6 tokens. Cal Sans + Inter via `next/font/google` (self-hosted, no CDN load at runtime). next-themes class-based dark mode + sun/moon toggle. CSP header added to next.config.ts (11 directives). Existing pages re-styled with Cal tokens. `/design-tokens` demo route renders every token in light + dark for visual QA. Cal Sans only ships weight 400 on Google Fonts; weights 500-600 fall back to synthesised — visually fine at display size, see Architecture Decision #3. |
+| F05 | Navigation Bar | 2026-05-08 | ✅ Yes (0 C / 0 H) | Sticky 52px nav with logo, 4 always-on links + role-conditional Dashboard, theme toggle, role badge, notification bell placeholder, logout (form POST), Sign-in button for anon. Active state via usePathname (2px brand underline + weight 600). Built as server component → role decisions never reach the client bundle. Verified anon HTML leaks zero role hints. 7 CEM stub pages added so nav links resolve. Root redirects to /events. |
 
 ---
 
@@ -39,7 +40,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F04 complete; F05 next up; F03 still pending end-to-end demo-user login test once `SUPABASE_SERVICE_ROLE_KEY` is provided) | – |
+| –  | –       | (idle — F05 complete; F06 next up; F03 still pending end-to-end demo-user login test once `SUPABASE_SERVICE_ROLE_KEY` is provided) | – |
 
 ---
 
@@ -49,8 +50,7 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F05 | Navigation Bar                   | 2     | F03 ✅, F04 ✅   |
-| F06 | Calendar — List View             | 2     | F04, F05         |
+| F06 | Calendar — List View             | 2     | F04 ✅, F05 ✅   |
 | F07 | Calendar — Month Grid View       | 2     | F06              |
 | F08 | Departments Page                 | 2     | F05              |
 | F09 | Holidays Page                    | 2     | F06              |
@@ -220,6 +220,7 @@
 | F02     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Defense-in-depth additions: header-spoof sanitisation, UUID shape validation, reserved-subdomain allowlist, 308 canonical-host redirect. 6 Medium npm-audit findings carry over from F01 (unchanged). End-to-end verified against 6 host scenarios. |
 | F03     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS (subject to end-to-end demo login test pending key) — Zero new findings. Defense-in-depth additions: safeNextPath() for redirect validation, generic auth error messages (no user enumeration), shouldCreateUser=false on magic links, GET-on-logout returns 405, server-side role check post-signin. RLS now on all 16 tables (closes Known Issue #2). 6 Medium npm-audit carry-over (unchanged). Login/no-access/logout routes verified live; production build green. |
 | F04     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. CSP header added with 11 directives (default-src, script-src, style-src, img-src, font-src, connect-src, frame-ancestors, base-uri, form-action, object-src, upgrade-insecure-requests in prod). Fonts self-hosted by `next/font/google` — no third-party CDN load at runtime. No new XSS surfaces (no `dangerouslySetInnerHTML`, no inline style strings from user input). 6 Medium npm-audit carry-over (unchanged). Production build green; all 7 routes including new `/design-tokens` verified. |
+| F05     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. NavBar is a server component → role decisions never enter the client bundle. Anonymous HTML verified to contain zero "Dashboard" / role-label leakage. Logout uses form POST (not GET link) → can't be triggered by prefetch / image / spider. Client components (NavLink, NotificationBell, RoleBadge) take no session data — RoleBadge receives a typed `role` prop, NavLink only reads `usePathname()`. 6 Medium npm-audit carry-over (unchanged). |
 
 ---
 
