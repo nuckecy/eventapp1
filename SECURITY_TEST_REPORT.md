@@ -1,9 +1,79 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F05)
+**Latest run:** 2026-05-08 (F06)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F06 — Calendar List View (2026-05-08)
+
+**Files audited:**
+`lib/cem/events.ts`, `lib/cem/dates.ts`, `lib/cem/types.ts`, `components/cem/event-row.tsx`, `components/cem/month-section.tsx`, `components/cem/past-stack.tsx`, `components/cem/filter-bar.tsx`, `components/cem/view-toggle.tsx`, `components/cem/empty-state.tsx`, `app/events/page.tsx`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F06 acceptance.**
+
+### Verified controls (F06 security checkpoint per CLAUDE.md)
+
+- [x] **No SQL injection via search input.** `lib/cem/events.ts` uses Drizzle's `ilike` helper (parameter-bound), never string concatenation. Before passing the search term into the `ilike` pattern, we escape SQL LIKE meta-characters (`\`, `%`, `_`) so the user can't write a wildcard that breaks out of their substring. Verified by grep and code review.
+- [x] **Query parameterized.** All filter conditions use Drizzle's `eq` / `or` / `ilike` / `and` helpers — no `sql.raw`, no template-string interpolation into SQL. Verified by grep.
+- [x] **User input sanitized before rendering.** All event titles / locations / times are rendered through React text nodes, which auto-escape. No `dangerouslySetInnerHTML`. Verified by grep.
+
+### Defense-in-depth additions (this feature)
+
+- **Tenant scoping mandatory at the query layer.** `listEvents()` requires `tenantId` as the first argument; the function builds `WHERE tenant_id = ?` as the first AND-condition. There is no overload that omits it. The page layer obtains the tenantId from middleware-injected headers via `getCurrentTenantId()`, never from query params.
+- **Search input length capped at 200 characters** in three places:
+  1. Server: `filters.search.trim().slice(0, SEARCH_MAX_LENGTH)` in `events.ts`.
+  2. Client URL push: `query.trim().slice(0, 200)` in `filter-bar.tsx`.
+  3. Browser-enforced: `maxLength={200}` on the `<input>`.
+  Belt-and-braces against a pathological huge-string that could blow query cost.
+- **`server-only` marker on `lib/cem/events.ts`.** If a client component ever tries to import the data-access module, the build fails loudly. Verified at line 12.
+- **Filter state in URL, not localStorage.** Means filters survive cache misses, are bookmarkable, and don't pollute browser storage. The `?type=` empty-string convention is intentional so "all types off" survives a refresh.
+- **`<details>`/`<summary>` for the past-events accordion** instead of a custom toggle. Built-in keyboard support (Enter/Space), built-in screen-reader semantics ("expanded/collapsed" announcements), and works without JS.
+- **Type-only types module (`lib/cem/types.ts`).** Lets client components import the `EventListItem` / `EventType` / `EVENT_TYPES` shapes without dragging the data-access layer into the browser bundle. Pure types/constants — no I/O.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F06 files | none |
+| `sql.raw` / SQL string interpolation | none — Drizzle helpers only |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` | none — filter state is URL-based |
+| `server-only` on data-access modules | ✅ events.ts |
+| Tenant scoping in every cem_* query | ✅ verified line 78 + 145 of events.ts |
+| Search input length cap | ✅ 3 layers (server slice, client slice, HTML maxLength) |
+| SQL LIKE meta-char escape | ✅ `replace(/[\\%_]/g, ...)` before passing to ilike |
+| `userId` / `tenantId` from request body | none — tenantId comes from middleware headers only |
+
+### Acceptance verification
+
+Live dev-server smoke test:
+
+| Scenario | Expected | Observed |
+|------|----------|----------|
+| `/events` (no filters) | 25 events grouped by month, past stack visible | All 25 event titles in HTML; 12 distinct months rendered ✓ |
+| `/events?q=Easter` | Easter Musical Night + Easter Sunday only | both present ✓ |
+| `/events?type=sunday` | only sunday-typed events | filtered correctly ✓ |
+| `/events?type=` | empty state | "No events found" present ✓ |
+| `/events?view=calendar` | F07 stub message | "Month grid view lands in F07" ✓ |
+| Production build | clean, all 14 routes | ✓ |
+| TypeScript strict | 0 errors | 0 errors ✓ |
+
+### Carry-over from F01–F05
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 
