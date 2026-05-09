@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 6 (complete except F21 Tenant App Launcher).
-- **Current Feature:** F21 — Tenant App Launcher (next up; final remaining feature)
+- **Current Phase:** 6 — **ALL 21 features complete.**
+- **Current Feature:** — (idle; full PRD scope shipped)
 - **Last Updated:** 2026-05-09
-- **Last Session Summary:** F13–F20 shipped continuously per user instruction. F13 StatsRow (single bordered container, optional clickable cells). F14 Lead Dashboard (StatsRow + table + CreateRequestModal w/ openNew/openEdit; Save Draft / Update Draft / Submit). F15 Admin Dashboard (4-tab queue: New/Under Review/Forwarded/Returned; Claim/Forward/Return + FeedbackModal). F16 Super Admin Dashboard (Approve/Send-Back/Delete; window.confirm gate on delete). F17 Notification System: `lib/cem/notifications.ts` + `lib/cem/notification-actions.ts` (server actions); fan-outs wired into all 7 state transitions in `lib/cem/requests.ts`; real `NotificationBell` dropdown with click-outside, Esc-to-close, mark-read, mute. F18 Audit Log Viewer (Super-Admin-only `/events/dashboard/super/audit`; filter by action/target/from/to in URL; immutability already enforced by F03 RLS). F19 Toast System (`components/cem/toast.tsx` — singleton, 3s auto-dismiss, role=alert, no stacking; mounted in events layout; wired into all dashboard actions + create-request modal + feedback modal). F20 Custom Domain Management (`lib/cem/domains.ts` w/ Vercel REST + Node DNS lookups for CNAME + TXT verification; server actions + `/events/dashboard/super/settings` UI showing per-domain DNS instructions). All security audits: 0 Critical, 0 High; production builds green throughout.
+- **Last Session Summary:** F21 (Tenant App Launcher) shipped, closing the build plan. New `lib/cem/tenant-apps.ts` (server-only, 60s cached) returns every app in the registry joined to the tenant's `core_tenant_apps` row — apps without a row come back as `enabled=false` so the launcher can render them as greyed "Not available" tiles instead of hiding them. Root page (`app/page.tsx`) is now the launcher: shows tenant name, welcome heading, and a 3-col card grid with enabled apps first. Disabled apps render as non-interactive dashed tiles with a Lock icon. CEM layout (`app/events/layout.tsx`) gained a server-side enablement check — visiting `/events` on a tenant without CEM enabled redirects to `/?unavailable=cem`, where the launcher shows an info banner. Two-layer enforcement: cosmetic launcher tile + hard layout redirect. All security audits: 0 Critical, 0 High; production builds green throughout F11–F21.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -46,6 +46,7 @@
 | F18 | Audit Log Viewer | 2026-05-09 | ✅ Yes (0 C / 0 H) | `lib/cem/audit.ts` read-only data layer (no INSERT/UPDATE/DELETE — F03 RLS denies anyway). `/events/dashboard/super/audit` page with action prefix, target type, and date-range filters in URL. Filter values are validated against an allowlist (`ALLOWED_ACTION_PREFIXES` / `ALLOWED_TARGETS`) before reaching SQL; date strings regex-checked `^\d{4}-\d{2}-\d{2}$`. Joined to `core_users` to show actor name+email. Page server-component-gates on `superadmin`/`platform_admin` role; non-super redirected to /no-access. |
 | F19 | Toast System | 2026-05-09 | ✅ Yes (0 C / 0 H) | `components/cem/toast.tsx`: ToastProvider mounted once in `app/events/layout.tsx`. `useToast().show("success" \| "error", message)` API. Single toast at a time — newest replaces oldest (PRD-mandated; no stacking). Auto-dismisses after 3s. `role="alert"` + `aria-live="assertive"` so screen readers announce immediately. Message length capped at 200 chars. Wired into AdminDashboardClient, SuperAdminDashboardClient, FeedbackModal, CreateRequestModal — all action call-sites now show success/error toasts. |
 | F20 | Custom Domain Management | 2026-05-09 | ✅ Yes (0 C / 0 H) | `lib/cem/domains.ts`: tenant-scoped DB layer + Vercel REST integration (`POST /v10/projects/.../domains` on add, `DELETE /v9/...` on remove) + Node `dns.promises` lookups for CNAME and TXT verification. Verification requires both CNAME-or-A AND a `_cem-verify.<domain>` TXT record matching the per-domain random 32-hex token. `lib/cem/domain-actions.ts` Zod-validates input domain shape + UUID + role-gates Super Admin. `/events/dashboard/super/settings` page renders per-domain DNS setup instructions with the exact CNAME target and TXT key/value. Vercel API token read from env at request-time, never logged or echoed. Domain rows enforce normalised lowercase + length cap 253. |
+| F21 | Tenant App Launcher | 2026-05-09 | ✅ Yes (0 C / 0 H) | `lib/cem/tenant-apps.ts` (server-only, 60s `unstable_cache`): `listAppsForTenant` LEFT JOINs `core_apps` to `core_tenant_apps` — apps with no enablement row come back as `enabled=false`. Root `app/page.tsx` reads tenant from middleware-injected headers and renders the launcher; no tenant context falls through to `/events`. Enabled apps link via an internal `APP_REGISTRY` (cem→/events); disabled apps render as non-interactive dashed tiles with a Lock icon — never as 404s, satisfying the F21 acceptance criterion. Two-layer enforcement: cosmetic launcher tile (server-rendered, no client gating) + hard `app/events/layout.tsx` redirect when `isAppEnabledForTenant(tenantId, "cem")` returns false. Tenant header writes are middleware-only (validated at edge), so a user can't fake enablement. |
 
 ---
 
@@ -55,7 +56,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F13–F20 complete; F21 (Tenant App Launcher) is the only remaining feature) | – |
+| –  | –       | (idle — all 21 features complete; PRD scope fully shipped) | – |
 
 ---
 
@@ -63,9 +64,7 @@
 
 <!-- Ordered by priority. Build features in this order. Do not reorder without explicit instruction. -->
 
-| ID  | Feature                          | Phase | Dependencies     |
-|-----|----------------------------------|-------|------------------|
-| F21 | Tenant App Launcher              | 6     | F02, F03         |
+_(All features shipped — no pending work.)_
 
 ### Acceptance + Security Checkpoint per Feature
 
@@ -236,6 +235,7 @@
 | F18     | 2026-05-09 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Read-only viewer; `cem_audit_log` stays INSERT-only at the DB level (F03 RLS denies UPDATE/DELETE). Filter inputs validated against an allowlist (`ALLOWED_ACTION_PREFIXES`, `ALLOWED_TARGETS`) AND date strings regex-checked `^\d{4}-\d{2}-\d{2}$` BEFORE reaching SQL — no possibility of SQL injection via search params. `escapeLikeMeta()` applied to action prefix before `ilike`. Page server-component-gates on `superadmin`/`platform_admin`; non-super redirect to /no-access. 6 Medium npm-audit carry-over. |
 | F19     | 2026-05-09 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Toast content rendered as React text node (auto-escaped). All call-sites pass either predefined success messages ("Claimed for review.", "Forwarded for approval.", etc.) or `humanError(code)` output keyed off action error codes — never raw user input. Message length capped at 200 chars defensively. ARIA semantics hard-coded (`role="alert"` + `aria-live="assertive"` + `aria-atomic="true"`); not data-driven. 6 Medium npm-audit carry-over. |
 | F20     | 2026-05-09 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Domain input Zod-validated against strict regex (allowed chars + dot pattern + 253-char cap) at action layer; `isValidDomainShape` re-validates at data layer (defence in depth). All four server actions re-read session and gate by `isSuper(role)`. Tenant scope on every DB read/write/update — domains belong to a tenant even though the `domain` text column is globally unique. Vercel API token read from `process.env` at request time, never logged, never returned to client. DNS verification requires BOTH CNAME-or-A AND a TXT record at `_cem-verify.<domain>` matching a per-domain 32-hex random token; partial match returns `dns_verified` (informational), not `active`. 6 Medium npm-audit carry-over. |
+| F21     | 2026-05-09 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Tenant header writes are middleware-only (validated at the edge); the launcher and CEM layout both call `readTenantContextFromHeaders()` which UUID-shape-validates `x-tenant-id` and rejects missing/malformed values. Two-layer enforcement of app enablement: (1) the launcher renders disabled apps as non-interactive dashed tiles with a `Lock` icon (cosmetic — couldn't be used as a security boundary), (2) `app/events/layout.tsx` performs `isAppEnabledForTenant(tenantId, "cem")` server-side and redirects to `/?unavailable=cem` when false (the actual gate). Internal `APP_REGISTRY` constant in the launcher maps slugs to known landing routes — disabled or unknown slugs render the cosmetic tile but never an active link. No client-side gating of any kind. Sort order is deterministic (enabled-first, then alphabetical) so a tenant's disabled apps are always at the bottom. 6 Medium npm-audit carry-over. |
 
 ---
 
