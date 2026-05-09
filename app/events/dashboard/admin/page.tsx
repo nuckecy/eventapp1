@@ -24,5 +24,12 @@ export default async function AdminDashboardPage() {
     listAllRequests(session.tenantId),
   ]);
 
-  return <AdminDashboardClient stats={stats} requests={requests} />;
+  return (
+    <AdminDashboardClient
+      stats={stats}
+      requests={requests}
+      currentUserId={session.userId}
+      currentRole={session.role}
+    />
+  );
 }

@@ -9,7 +9,7 @@
 
 import "server-only";
 
-import { and, asc, eq, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { cemHolidays } from "@/db/schema";
 import { HOLIDAY_TYPES, type HolidayListItem, type HolidayType } from "./types";
@@ -27,7 +27,11 @@ export async function listHolidays(
   tenantId: string,
   filters: HolidayFilters = {},
 ): Promise<HolidayListItem[]> {
-  const conditions = [eq(cemHolidays.tenant_id, tenantId)];
+  const conditions = [
+    eq(cemHolidays.tenant_id, tenantId),
+    // EC-06: hide soft-deleted holidays.
+    isNull(cemHolidays.deleted_at),
+  ];
 
   if (filters.types) {
     const arr = Array.from(filters.types);

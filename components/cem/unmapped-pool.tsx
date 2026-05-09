@@ -79,7 +79,7 @@ function UnmappedCard({ record }: { record: UnmappedBirthdayItem }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function map() {
+  async function map(opts: { confirmOverwrite?: boolean } = {}) {
     if (!record.suggest_match_user_id) return;
     setBusy(true);
     setError(null);
@@ -87,8 +87,22 @@ function UnmappedCard({ record }: { record: UnmappedBirthdayItem }) {
       const result = await mapBirthdayAction({
         unmappedId: record.id,
         userId: record.suggest_match_user_id,
+        confirmOverwrite: opts.confirmOverwrite ?? false,
       });
       if (!result.ok) {
+        // EC-03: existing_birthday means the target user already has a
+        // birthday on file. Confirm with the admin before overwriting.
+        if (result.error === "existing_birthday") {
+          const matchName = record.suggest_match_name ?? "this person";
+          const ok = window.confirm(
+            `${matchName} already has a birthday on file. Mapping will overwrite it. Continue?`,
+          );
+          if (ok) {
+            // Retry with confirmOverwrite=true.
+            await map({ confirmOverwrite: true });
+          }
+          return;
+        }
         setError(result.error === "forbidden" ? "Admin only." : "Couldn't map.");
         return;
       }
@@ -145,7 +159,7 @@ function UnmappedCard({ record }: { record: UnmappedBirthdayItem }) {
           {record.suggest_match_user_id ? (
             <button
               type="button"
-              onClick={map}
+              onClick={() => map()}
               disabled={busy || pending}
               className="inline-flex h-7 items-center rounded-md bg-cal-brand px-2.5 text-[11px] font-medium text-cal-bg transition-opacity hover:opacity-90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-1"
             >

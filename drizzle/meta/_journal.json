@@ -22,6 +22,20 @@
       "when": 1778301376204,
       "tag": "0002_add_lead_name",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778307175560,
+      "tag": "0003_black_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778308098062,
+      "tag": "0004_supreme_freak",
+      "breakpoints": true
     }
   ]
 }

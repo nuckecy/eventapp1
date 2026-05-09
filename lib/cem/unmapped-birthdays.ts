@@ -56,15 +56,44 @@ export async function listUnmappedBirthdays(
 }
 
 /**
+ * Look up whether a target user already has a birthday on file for
+ * this tenant. Used by the Admin Map flow to confirm overwrites.
+ */
+export async function getExistingBirthdayForUser(
+  tenantId: string,
+  userId: string,
+): Promise<{ day: number; month: number; year: number | null } | null> {
+  const rows = await db
+    .select({
+      day: cemBirthdays.day,
+      month: cemBirthdays.month,
+      year: cemBirthdays.year,
+    })
+    .from(cemBirthdays)
+    .where(
+      and(eq(cemBirthdays.tenant_id, tenantId), eq(cemBirthdays.user_id, userId)),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
  * Map an unmapped record to a real user. Creates the cem_birthdays
  * row (or updates if one exists), marks the unmapped record as
  * "mapped", and writes an audit-log entry.
+ *
+ * EC-03: when `confirmOverwrite=false` and a birthday already exists
+ * for this user, throws `existing_birthday` so the caller can prompt
+ * the admin to confirm. With `confirmOverwrite=true`, the existing row
+ * is updated atomically via the new (tenant_id, user_id) unique
+ * constraint and onConflictDoUpdate.
  */
 export async function mapUnmappedBirthday(
   tenantId: string,
   unmappedId: string,
   targetUserId: string,
   actorId: string,
+  confirmOverwrite: boolean = false,
 ): Promise<void> {
   // Fetch the unmapped row (and verify tenant scope).
   const unmappedRows = await db
@@ -81,38 +110,32 @@ export async function mapUnmappedBirthday(
   if (!u) throw new Error("not_found");
   if (u.status !== "pending") throw new Error("already_processed");
 
-  // Upsert the cem_birthdays row for the target user.
-  const existing = await db
-    .select({ id: cemBirthdays.id })
-    .from(cemBirthdays)
-    .where(
-      and(
-        eq(cemBirthdays.tenant_id, tenantId),
-        eq(cemBirthdays.user_id, targetUserId),
-      ),
-    )
-    .limit(1);
+  // EC-03: surface overwrites to the admin before they commit.
+  if (!confirmOverwrite) {
+    const existing = await getExistingBirthdayForUser(tenantId, targetUserId);
+    if (existing) throw new Error("existing_birthday");
+  }
 
-  if (existing.length === 0) {
-    await db.insert(cemBirthdays).values({
+  // Atomic upsert via the new unique constraint.
+  await db
+    .insert(cemBirthdays)
+    .values({
       tenant_id: tenantId,
       user_id: targetUserId,
       day: u.day,
       month: u.month,
       year: u.year,
       show_age: false,
-    });
-  } else {
-    await db
-      .update(cemBirthdays)
-      .set({
+    })
+    .onConflictDoUpdate({
+      target: [cemBirthdays.tenant_id, cemBirthdays.user_id],
+      set: {
         day: u.day,
         month: u.month,
         year: u.year,
         updated_at: new Date(),
-      })
-      .where(eq(cemBirthdays.id, existing[0].id));
-  }
+      },
+    });
 
   // Mark the unmapped row done.
   await db
@@ -132,7 +155,10 @@ export async function mapUnmappedBirthday(
     action: "birthday.mapped",
     target_type: "birthday",
     target_id: unmappedId,
-    metadata: JSON.stringify({ user_id: targetUserId }),
+    metadata: JSON.stringify({
+      user_id: targetUserId,
+      overwrote_existing: confirmOverwrite,
+    }),
   });
 }
 

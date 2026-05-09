@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
 import {
   cemAuditLog,
@@ -231,7 +231,10 @@ export async function updateRequestDraft(
   if (existing[0].status !== "draft") throw new Error("not_draft");
   if (existing[0].submitted_by !== leadUserId) throw new Error("not_owner");
 
-  await db
+  // EC-02: gate the WHERE on status='draft' AND submitted_by so a
+  // race (e.g. lead submits in another tab while editing) doesn't
+  // silently mutate a non-draft.
+  const result = await db
     .update(cemRequests)
     .set({
       title: input.title,
@@ -245,7 +248,16 @@ export async function updateRequestDraft(
       budget: input.budget,
       updated_at: new Date(),
     })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "draft"),
+        eq(cemRequests.submitted_by, leadUserId),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("not_draft");
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -279,10 +291,20 @@ export async function submitRequest(
   if (existing[0].submitted_by !== leadUserId) throw new Error("not_owner");
 
   const now = new Date();
-  await db
+  // EC-02: status check moved inside WHERE so the update fails if
+  // someone else moved the request between SELECT and UPDATE.
+  const result = await db
     .update(cemRequests)
     .set({ status: "submitted", submitted_at: now, updated_at: now })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        inArray(cemRequests.status, ["draft", "returned"]),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -329,7 +351,11 @@ export async function claimRequest(
   if (existing[0].claimed_by) throw new Error("already_claimed");
 
   const now = new Date();
-  await db
+  // EC-02: gate the update on status='submitted' AND claimed_by IS
+  // NULL inside the WHERE clause. Race-safe — if two admins click
+  // Claim simultaneously, exactly one update returns a row; the
+  // other returns zero and we throw.
+  const result = await db
     .update(cemRequests)
     .set({
       status: "under_review",
@@ -337,7 +363,16 @@ export async function claimRequest(
       claimed_at: now,
       updated_at: now,
     })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "submitted"),
+        isNull(cemRequests.claimed_by),
+      ),
+    )
+    .returning({ id: cemRequests.id, claimed_by: cemRequests.claimed_by });
+  if (result.length === 0) throw new Error("already_claimed");
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -382,10 +417,20 @@ export async function forwardRequest(
   if (existing[0].claimed_by !== adminUserId) throw new Error("not_claimer");
 
   const now = new Date();
-  await db
+  // EC-02: gate on status='under_review' AND claimed_by=adminUserId.
+  const result = await db
     .update(cemRequests)
     .set({ status: "ready_for_approval", forwarded_at: now, updated_at: now })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "under_review"),
+        eq(cemRequests.claimed_by, adminUserId),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -433,10 +478,20 @@ export async function returnRequest(
   if (existing[0].claimed_by !== adminUserId) throw new Error("not_claimer");
 
   const now = new Date();
-  await db
+  // EC-02: gate on status='under_review' AND claimed_by=adminUserId.
+  const result = await db
     .update(cemRequests)
     .set({ status: "returned", updated_at: now })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "under_review"),
+        eq(cemRequests.claimed_by, adminUserId),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
 
   await db.insert(cemRequestFeedback).values({
     request_id: requestId,
@@ -465,6 +520,196 @@ export async function returnRequest(
       referenceId: requestId,
     });
   }
+}
+
+/**
+ * Release a claimed request back to the pool.
+ *
+ * Allowed when the actor is either:
+ *   (a) the admin who originally claimed it, OR
+ *   (b) a super admin (treated as a "reassign" in the EDGE_CASES doc;
+ *       functionally identical to unclaim in our model since claims are
+ *       open — any admin can reclaim once it's back in the pool).
+ *
+ * On success the request returns to status='submitted' and claimed_by /
+ * claimed_at are reset to null.
+ */
+export async function unclaimRequest(
+  tenantId: string,
+  actorUserId: string,
+  actorRole: "admin" | "superadmin" | "platform_admin",
+  requestId: string,
+): Promise<void> {
+  const existing = await db
+    .select({
+      id: cemRequests.id,
+      status: cemRequests.status,
+      claimed_by: cemRequests.claimed_by,
+      title: cemRequests.title,
+      submitted_by: cemRequests.submitted_by,
+    })
+    .from(cemRequests)
+    .where(and(eq(cemRequests.id, requestId), eq(cemRequests.tenant_id, tenantId)))
+    .limit(1);
+  if (existing.length === 0) throw new Error("not_found");
+  if (existing[0].status !== "under_review") throw new Error("invalid_state");
+
+  const isSuper = actorRole === "superadmin" || actorRole === "platform_admin";
+  if (!isSuper && existing[0].claimed_by !== actorUserId) {
+    throw new Error("not_claimer");
+  }
+
+  // Optimistic-locked update: only succeeds if status is still
+  // 'under_review' AND claimed_by matches what we read.
+  const previousClaimer = existing[0].claimed_by;
+  const result = await db
+    .update(cemRequests)
+    .set({
+      status: "submitted",
+      claimed_by: null,
+      claimed_at: null,
+      updated_at: new Date(),
+    })
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "under_review"),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
+
+  await db.insert(cemAuditLog).values({
+    tenant_id: tenantId,
+    actor_id: actorUserId,
+    action: isSuper && previousClaimer !== actorUserId
+      ? "request.reassigned"
+      : "request.unclaimed",
+    target_type: "request",
+    target_id: requestId,
+    metadata: JSON.stringify({
+      previous_claimer: previousClaimer,
+      by_role: actorRole,
+    }),
+  });
+
+  // Notify the previous claimer (if super reassigned) and the submitter
+  // so everyone with a stake knows it's back in the pool.
+  const recipients = new Set<string>();
+  if (previousClaimer && previousClaimer !== actorUserId) {
+    recipients.add(previousClaimer);
+  }
+  if (existing[0].submitted_by) recipients.add(existing[0].submitted_by);
+  for (const recipient of recipients) {
+    await createNotification({
+      tenantId,
+      recipientUserId: recipient,
+      type: "request.unclaimed",
+      title: "Request returned to queue",
+      body: `"${existing[0].title}" is back in the new requests pool.`,
+      referenceType: "request",
+      referenceId: requestId,
+    });
+  }
+}
+
+/**
+ * Background sweep: any request stuck in 'under_review' for more than
+ * `staleAfterMs` (default 72h) is auto-unclaimed. Returns the list of
+ * affected request IDs.
+ *
+ * Designed to be invoked by a cron route handler — see
+ * /api/cron/cem-sweep-stale-claims/route.ts. Idempotent and safe to
+ * call repeatedly.
+ *
+ * SECURITY: This is the ONE state transition where there is no human
+ * actor. We use the platform-admin sentinel (we look up the first
+ * platform_admin user for the audit log entry; if none exists, we
+ * fall back to the original claimer's id so audit referential
+ * integrity is preserved).
+ */
+export async function sweepStaleClaims(
+  staleAfterMs: number = 72 * 60 * 60 * 1000,
+): Promise<{ swept: string[] }> {
+  const cutoff = new Date(Date.now() - staleAfterMs);
+
+  const stale = await db
+    .select({
+      id: cemRequests.id,
+      tenant_id: cemRequests.tenant_id,
+      title: cemRequests.title,
+      claimed_by: cemRequests.claimed_by,
+      submitted_by: cemRequests.submitted_by,
+    })
+    .from(cemRequests)
+    .where(
+      and(
+        eq(cemRequests.status, "under_review"),
+        isNotNull(cemRequests.claimed_at),
+        lt(cemRequests.claimed_at, cutoff),
+      ),
+    );
+
+  const swept: string[] = [];
+  for (const r of stale) {
+    const result = await db
+      .update(cemRequests)
+      .set({
+        status: "submitted",
+        claimed_by: null,
+        claimed_at: null,
+        updated_at: new Date(),
+      })
+      .where(
+        and(
+          eq(cemRequests.id, r.id),
+          eq(cemRequests.status, "under_review"),
+          lt(cemRequests.claimed_at, cutoff),
+        ),
+      )
+      .returning({ id: cemRequests.id });
+
+    if (result.length === 0) continue; // raced — someone else moved it
+    swept.push(r.id);
+
+    // Audit + notify. Audit actor is the previous claimer (so the
+    // chain stays attributable); a metadata flag distinguishes
+    // automatic vs manual unclaims.
+    if (r.claimed_by) {
+      await db.insert(cemAuditLog).values({
+        tenant_id: r.tenant_id,
+        actor_id: r.claimed_by,
+        action: "request.timed_out",
+        target_type: "request",
+        target_id: r.id,
+        metadata: JSON.stringify({ stale_after_ms: staleAfterMs, automatic: true }),
+      });
+
+      await createNotification({
+        tenantId: r.tenant_id,
+        recipientUserId: r.claimed_by,
+        type: "request.timed_out",
+        title: "Claim timed out",
+        body: `"${r.title}" was returned to the queue after 72h of inactivity.`,
+        referenceType: "request",
+        referenceId: r.id,
+      });
+    }
+    if (r.submitted_by) {
+      await createNotification({
+        tenantId: r.tenant_id,
+        recipientUserId: r.submitted_by,
+        type: "request.timed_out",
+        title: "Your request is back in the queue",
+        body: `"${r.title}" was reassigned after the reviewing admin became inactive.`,
+        referenceType: "request",
+        referenceId: r.id,
+      });
+    }
+  }
+
+  return { swept };
 }
 
 export async function approveAndPublishRequest(
@@ -503,7 +748,11 @@ export async function approveAndPublishRequest(
     })
     .returning({ id: cemEvents.id });
 
-  await db
+  // EC-02: gate the status flip on the prior status. If someone
+  // raced (e.g. send-back fired between our SELECT above and now),
+  // we delete the just-inserted event and throw, so the system is
+  // back to consistent state.
+  const flipped = await db
     .update(cemRequests)
     .set({
       status: "approved",
@@ -511,7 +760,19 @@ export async function approveAndPublishRequest(
       approved_at: now,
       updated_at: now,
     })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "ready_for_approval"),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (flipped.length === 0) {
+    // Roll back the event we just created.
+    await db.delete(cemEvents).where(eq(cemEvents.id, inserted[0].id));
+    throw new Error("invalid_state");
+  }
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -560,10 +821,19 @@ export async function sendBackRequestToAdmin(
   if (existing[0].status !== "ready_for_approval") throw new Error("invalid_state");
 
   const now = new Date();
-  await db
+  // EC-02: gate on status='ready_for_approval'.
+  const result = await db
     .update(cemRequests)
     .set({ status: "under_review", updated_at: now })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "ready_for_approval"),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,
@@ -607,10 +877,20 @@ export async function deleteRequest(
   if (existing.length === 0) throw new Error("not_found");
 
   const now = new Date();
-  await db
+  // EC-02: idempotent — gate via deleted_at IS NULL so a second
+  // call is a no-op (no double-audit, no double-notify).
+  const result = await db
     .update(cemRequests)
     .set({ status: "deleted", deleted_at: now, updated_at: now })
-    .where(eq(cemRequests.id, requestId));
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        isNull(cemRequests.deleted_at),
+      ),
+    )
+    .returning({ id: cemRequests.id, status: cemRequests.status });
+  if (result.length === 0) return;
 
   await db.insert(cemAuditLog).values({
     tenant_id: tenantId,

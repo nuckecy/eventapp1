@@ -23,6 +23,10 @@ function isAdmin(role: string | undefined) {
 const MapInput = z.object({
   unmappedId: z.string().uuid(),
   userId: z.string().uuid(),
+  // EC-03: admin must explicitly confirm if the target already has a
+  // birthday on file. The first call returns `existing_birthday`; the
+  // UI prompts; the retry includes confirmOverwrite:true.
+  confirmOverwrite: z.boolean().optional(),
 });
 
 const DismissInput = z.object({
@@ -45,6 +49,7 @@ export async function mapBirthdayAction(input: unknown): Promise<ActionResult> {
       parsed.data.unmappedId,
       parsed.data.userId,
       session.userId,
+      parsed.data.confirmOverwrite ?? false,
     );
   } catch (e) {
     const reason = e instanceof Error ? e.message : "error";

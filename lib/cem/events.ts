@@ -12,7 +12,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
-import { and, asc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   cemDepartments,
@@ -75,7 +75,11 @@ export async function listEvents(
   tenantId: string,
   filters: EventListFilters = {},
 ): Promise<EventListItem[]> {
-  const conditions = [eq(cemEvents.tenant_id, tenantId)];
+  const conditions = [
+    eq(cemEvents.tenant_id, tenantId),
+    // EC-06: hide soft-deleted events.
+    isNull(cemEvents.deleted_at),
+  ];
 
   // Type filter — translate the Set to an OR clause. An empty set
   // returns no rows (caller should normally pass undefined for "all").
@@ -142,6 +146,12 @@ export async function listDepartmentNames(
   return db
     .select({ id: cemDepartments.id, name: cemDepartments.name })
     .from(cemDepartments)
-    .where(eq(cemDepartments.tenant_id, tenantId))
+    // EC-06: hide soft-deleted departments.
+    .where(
+      and(
+        eq(cemDepartments.tenant_id, tenantId),
+        isNull(cemDepartments.deleted_at),
+      ),
+    )
     .orderBy(asc(cemDepartments.name));
 }

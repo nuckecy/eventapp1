@@ -253,7 +253,7 @@ function humanError(err: string): string {
     case "forbidden":
       return "Super admin only.";
     case "invalid_state":
-      return "Request is no longer in that state.";
+      return "This request was updated by someone else. Refresh and try again.";
     case "date_required_for_publish":
       return "This request needs a date before it can be approved.";
     default:

@@ -71,11 +71,13 @@ export type UpsertOwnBirthdayInput = {
 };
 
 /**
- * Insert or update the user's own birthday. The (tenant_id, user_id)
- * pair is enforced by application-layer logic — there's no UNIQUE
- * constraint on the column pair (legacy permissive schema), so we
- * pre-check and update-or-insert manually rather than relying on
- * `onConflictDo*`.
+ * Insert or update the user's own birthday.
+ *
+ * EC-03: a unique constraint `cem_birthdays_tenant_user_unique` now
+ * covers (tenant_id, user_id), so we use atomic onConflictDoUpdate.
+ * This eliminates the SELECT-then-INSERT race where two simultaneous
+ * PUTs from the same user could create duplicate rows. The Admin's
+ * "map an unmapped record" path also benefits — see mapBirthdayAction.
  *
  * SECURITY: Same scoping rules. day/month/year are validated by the
  * caller (route handler) via Zod before reaching this function;
@@ -96,32 +98,24 @@ export async function upsertOwnBirthday(
     }
   }
 
-  const existing = await db
-    .select({ id: cemBirthdays.id, department_id: cemBirthdays.department_id })
-    .from(cemBirthdays)
-    .where(and(eq(cemBirthdays.tenant_id, tenantId), eq(cemBirthdays.user_id, userId)))
-    .limit(1);
-
-  if (existing.length > 0) {
-    await db
-      .update(cemBirthdays)
-      .set({
+  await db
+    .insert(cemBirthdays)
+    .values({
+      tenant_id: tenantId,
+      user_id: userId,
+      day: input.day,
+      month: input.month,
+      year: input.year,
+      show_age: input.show_age,
+    })
+    .onConflictDoUpdate({
+      target: [cemBirthdays.tenant_id, cemBirthdays.user_id],
+      set: {
         day: input.day,
         month: input.month,
         year: input.year,
         show_age: input.show_age,
         updated_at: new Date(),
-      })
-      .where(eq(cemBirthdays.id, existing[0].id));
-    return;
-  }
-
-  await db.insert(cemBirthdays).values({
-    tenant_id: tenantId,
-    user_id: userId,
-    day: input.day,
-    month: input.month,
-    year: input.year,
-    show_age: input.show_age,
-  });
+      },
+    });
 }

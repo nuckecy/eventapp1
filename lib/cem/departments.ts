@@ -18,7 +18,7 @@
 
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { cemDepartments } from "@/db/schema";
 
@@ -47,7 +47,13 @@ export async function listDepartmentsPublic(tenantId: string): Promise<Departmen
       lead_name: cemDepartments.lead_name,
     })
     .from(cemDepartments)
-    .where(eq(cemDepartments.tenant_id, tenantId))
+    // EC-06: hide soft-deleted departments from default reads.
+    .where(
+      and(
+        eq(cemDepartments.tenant_id, tenantId),
+        isNull(cemDepartments.deleted_at),
+      ),
+    )
     .orderBy(asc(cemDepartments.name));
 }
 
@@ -71,6 +77,12 @@ export async function listDepartmentsAuthenticated(
       phone: cemDepartments.phone,
     })
     .from(cemDepartments)
-    .where(eq(cemDepartments.tenant_id, tenantId))
+    // EC-06: hide soft-deleted departments from default reads.
+    .where(
+      and(
+        eq(cemDepartments.tenant_id, tenantId),
+        isNull(cemDepartments.deleted_at),
+      ),
+    )
     .orderBy(asc(cemDepartments.name));
 }

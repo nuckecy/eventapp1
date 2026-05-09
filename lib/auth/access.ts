@@ -21,6 +21,7 @@ import {
   coreApps,
   coreTenantApps,
   coreTenantUserRoles,
+  coreTenantUsers,
   coreTenants,
   coreUsers,
 } from "@/db/schema/core";
@@ -111,4 +112,43 @@ export async function checkAccess(
   }
 
   return { allowed: true, role, tenantId: tenant[0].id };
+}
+
+/**
+ * EC-05: tenant-membership predicate.
+ *
+ * Returns true if the user is an ACTIVE member of the tenant — i.e.
+ * a row exists in core_tenant_users with status='active'. Platform
+ * admins are always considered members of every tenant.
+ *
+ * Use this on authenticated endpoints that aren't app-scoped (e.g.
+ * department contact details, the platform launcher) to make sure the
+ * caller actually belongs to the tenant whose data they're requesting.
+ *
+ * SECURITY: parameterized query, tenant_id and user_id both required.
+ */
+export async function isTenantMember(
+  userId: string,
+  tenantId: string,
+): Promise<boolean> {
+  // Platform admin bypass — they have access to every tenant by design.
+  const platform = await db
+    .select({ is_platform_admin: coreUsers.is_platform_admin })
+    .from(coreUsers)
+    .where(eq(coreUsers.id, userId))
+    .limit(1);
+  if (platform[0]?.is_platform_admin) return true;
+
+  const member = await db
+    .select({ tenant_id: coreTenantUsers.tenant_id })
+    .from(coreTenantUsers)
+    .where(
+      and(
+        eq(coreTenantUsers.tenant_id, tenantId),
+        eq(coreTenantUsers.user_id, userId),
+        eq(coreTenantUsers.status, "active"),
+      ),
+    )
+    .limit(1);
+  return member.length > 0;
 }

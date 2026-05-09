@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/cem-sweep-stale-claims",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

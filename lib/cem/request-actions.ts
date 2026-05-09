@@ -18,6 +18,7 @@ import {
   returnRequest,
   sendBackRequestToAdmin,
   submitRequest,
+  unclaimRequest,
   updateRequestDraft,
   type CreateRequestInput,
 } from "@/lib/cem/requests";
@@ -197,6 +198,33 @@ export async function sendBackToAdminAction(requestId: unknown): Promise<ActionR
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "send_back_failed" };
+  }
+}
+
+/**
+ * Release a claimed request back to the queue. Allowed for:
+ *   - the admin who claimed it (self-unclaim)
+ *   - any super admin (forced reassignment)
+ * Closes EC-01.
+ */
+export async function unclaimRequestAction(requestId: unknown): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "unauthorized" };
+  if (!isAdmin(session.role)) return { ok: false, error: "forbidden" };
+  const id = UuidSchema.safeParse(requestId);
+  if (!id.success) return { ok: false, error: "invalid_payload" };
+  try {
+    await unclaimRequest(
+      session.tenantId,
+      session.userId,
+      session.role as "admin" | "superadmin" | "platform_admin",
+      id.data,
+    );
+    revalidatePath("/events/dashboard/admin");
+    revalidatePath("/events/dashboard/super");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "unclaim_failed" };
   }
 }
 

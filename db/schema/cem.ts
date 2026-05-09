@@ -14,6 +14,7 @@ import {
   date,
   timestamp,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
 import { coreTenants, coreUsers } from "./core";
 
@@ -50,6 +51,11 @@ export const cemDepartments = pgTable("cem_departments", {
   lead_user_id: uuid("lead_user_id").references(() => coreUsers.id),
   email: text("email"),
   phone: text("phone"),
+  // EC-06: soft-delete column. Never hard-delete a department —
+  // events/requests reference department_id, and breaking those FKs
+  // would corrupt history. Set deleted_at = now() instead and filter
+  // reads with isNull(deleted_at).
+  deleted_at: timestamp("deleted_at"),
   created_at: timestamp("created_at").defaultNow(),
 });
 
@@ -71,6 +77,9 @@ export const cemEvents = pgTable("cem_events", {
   budget: integer("budget"),
   source_request_id: uuid("source_request_id"), // FK to cem_requests if created via workflow
   created_by: uuid("created_by").references(() => coreUsers.id),
+  // EC-06: soft-delete. Never hard-delete; the request that produced
+  // the event references it, audit log references it, etc.
+  deleted_at: timestamp("deleted_at"),
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
 });
@@ -130,6 +139,10 @@ export const cemHolidays = pgTable("cem_holidays", {
   type: cemHolidayTypeEnum("type").notNull(),
   note: text("note"),
   year: integer("year").notNull(),
+  // EC-06: soft-delete. Useful when a tenant-specific holiday needs
+  // to be hidden but historical events on that date still reference
+  // it.
+  deleted_at: timestamp("deleted_at"),
 });
 
 // ── cem_birthdays (mapped to user accounts) ───────────────────────────
@@ -139,22 +152,34 @@ export const cemHolidays = pgTable("cem_holidays", {
 // Only `/api/me/birthday` (own data) and `/api/birthdays?admin=true` may
 // expose it.
 
-export const cemBirthdays = pgTable("cem_birthdays", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenant_id: uuid("tenant_id")
-    .notNull()
-    .references(() => coreTenants.id, { onDelete: "cascade" }),
-  user_id: uuid("user_id")
-    .notNull()
-    .references(() => coreUsers.id, { onDelete: "cascade" }),
-  day: integer("day").notNull(), // 1-31
-  month: integer("month").notNull(), // 1-12
-  year: integer("year"), // nullable: some users may not want to share
-  show_age: boolean("show_age").default(false),
-  department_id: uuid("department_id").references(() => cemDepartments.id),
-  created_at: timestamp("created_at").defaultNow(),
-  updated_at: timestamp("updated_at").defaultNow(),
-});
+export const cemBirthdays = pgTable(
+  "cem_birthdays",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenant_id: uuid("tenant_id")
+      .notNull()
+      .references(() => coreTenants.id, { onDelete: "cascade" }),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => coreUsers.id, { onDelete: "cascade" }),
+    day: integer("day").notNull(), // 1-31
+    month: integer("month").notNull(), // 1-12
+    year: integer("year"), // nullable: some users may not want to share
+    show_age: boolean("show_age").default(false),
+    department_id: uuid("department_id").references(() => cemDepartments.id),
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+  },
+  // EC-03: prevent duplicate birthday rows for the same user in the
+  // same tenant. The application layer also checks before inserting,
+  // but this is the hard guarantee.
+  (table) => ({
+    cem_birthdays_tenant_user_unique: unique("cem_birthdays_tenant_user_unique").on(
+      table.tenant_id,
+      table.user_id,
+    ),
+  }),
+);
 
 // ── cem_birthdays_unmapped (legacy data awaiting user mapping) ────────
 

@@ -1,0 +1,1 @@
+ALTER TABLE "cem_birthdays" ADD CONSTRAINT "cem_birthdays_tenant_user_unique" UNIQUE("tenant_id","user_id");

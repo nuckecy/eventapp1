@@ -24,11 +24,15 @@ import {
 export type NotificationType =
   | "request.submitted"
   | "request.claimed"
+  | "request.unclaimed"
+  | "request.timed_out"
   | "request.forwarded"
   | "request.approved"
   | "request.returned"
   | "request.sent_back"
-  | "request.deleted";
+  | "request.deleted"
+  | "request.recalled"
+  | "request.cancelled";
 
 type NotifyArgs = {
   tenantId: string;

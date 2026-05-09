@@ -1,10 +1,22 @@
-// Session helper — combines Supabase Auth + our checkAccess() to
-// produce the canonical session shape required by PRD Section 10:
-//   { userId, tenantId, role, appSlug }
+// Session helpers.
 //
-// This is the function every server component / route handler calls
-// to learn "who is this user, what tenant, what role do they have for
-// the current app?".
+// Two layers:
+//   1. getPlatformSession()  → { userId, tenantId, email, name }
+//      Used by app-agnostic surfaces like the tenant launcher (F21).
+//      No role information — that depends on which app you're in.
+//
+//   2. getSession({ appSlug }) → AppSession with `role` for that app.
+//      Used by app-specific pages and route handlers. The `role` field
+//      is scoped to the app passed in `appSlug` and MUST NOT be
+//      treated as global. A user can be Lead in CEM and Member in
+//      Fold; calling getSession({ appSlug: "fold" }) returns the Fold
+//      role, calling it with "cem" returns the CEM role.
+//
+// EC-04: previously `appSlug` defaulted to "cem", which silently made
+// "session.role" mean "role in CEM". Now appSlug is REQUIRED for
+// getSession() — callers must opt in to a specific app, eliminating
+// the cross-app role confusion bug. The launcher uses
+// getPlatformSession() instead.
 //
 // SECURITY:
 // - Uses Supabase's `getUser()` which re-validates the JWT against the
@@ -36,9 +48,65 @@ export type AppSession = {
 };
 
 export type GetSessionOptions = {
-  /** Default: "cem". Override for other apps in the same tenant. */
+  /**
+   * Default: "cem". Override for other apps in the same tenant.
+   *
+   * EC-04: the returned `role` is the role for THIS app only. Do not
+   * pass session.role across app boundaries. App-agnostic surfaces
+   * (the tenant launcher, settings pages that span apps) must use
+   * `getPlatformSession()` instead.
+   */
   appSlug?: string;
 };
+
+export type PlatformSession = {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  tenantId: string;
+  tenantSlug: string;
+};
+
+/**
+ * App-agnostic session: only "who" and "where" — no role. Use this on
+ * surfaces that span multiple apps (launcher) or precede app
+ * resolution (e.g. cross-app notification queries that fan out per-
+ * app role checks elsewhere).
+ *
+ * EC-04 / EC-05: also verifies tenant membership via core_tenant_users.
+ * Without this check, an authenticated user from Tenant A could land
+ * on Tenant B's launcher and see "Welcome, [their name]" — innocuous
+ * but a privacy leak. Returns null if the user is not an active member
+ * of the resolved tenant.
+ *
+ * If you need role information, call getSession({ appSlug }) AFTER
+ * you know which app's permission model you're checking against.
+ */
+export async function getPlatformSession(): Promise<PlatformSession | null> {
+  const requestHeaders = await headers();
+  const tenant = readTenantContextFromHeaders(requestHeaders);
+  if (!tenant) return null;
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) return null;
+
+  // EC-05: verify tenant membership.
+  const { isTenantMember } = await import("./access");
+  const member = await isTenantMember(user.id, tenant.tenantId);
+  if (!member) return null;
+
+  return {
+    userId: user.id,
+    email: user.email ?? null,
+    name: (user.user_metadata?.name as string | undefined) ?? null,
+    tenantId: tenant.tenantId,
+    tenantSlug: tenant.tenantSlug,
+  };
+}
 
 /**
  * Returns the current session (user + tenant + role) or null.

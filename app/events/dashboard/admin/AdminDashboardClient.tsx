@@ -16,6 +16,7 @@ import { useToast } from "@/components/cem/toast";
 import {
   claimRequestAction,
   forwardRequestAction,
+  unclaimRequestAction,
 } from "@/lib/cem/request-actions";
 import type { RequestListItem, RequestStatus } from "@/lib/cem/types";
 
@@ -31,6 +32,8 @@ const TABS: Array<{ key: TabKey; label: string; statuses: RequestStatus[] }> = [
 export function AdminDashboardClient({
   stats,
   requests,
+  currentUserId,
+  currentRole,
 }: {
   stats: {
     submitted: number;
@@ -40,6 +43,8 @@ export function AdminDashboardClient({
     totalPending: number;
   };
   requests: RequestListItem[];
+  currentUserId: string;
+  currentRole: string;
 }) {
   const [tab, setTab] = useState<TabKey>("new");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -86,6 +91,25 @@ export function AdminDashboardClient({
     setBusyId(null);
     startTransition(() => router.refresh());
   }
+  async function handleUnclaim(id: string, isOwn: boolean) {
+    const verb = isOwn ? "Unclaim" : "Reassign";
+    if (!window.confirm(`${verb} this request? It will return to the new requests pool.`)) {
+      return;
+    }
+    setBusyId(id);
+    setError(null);
+    const r = await unclaimRequestAction(id);
+    if (!r.ok) {
+      setError(humanError(r.error));
+      toast.show("error", humanError(r.error));
+    } else {
+      toast.show("success", isOwn ? "Released back to queue." : "Reassigned to queue.");
+    }
+    setBusyId(null);
+    startTransition(() => router.refresh());
+  }
+
+  const isSuper = currentRole === "superadmin" || currentRole === "platform_admin";
 
   return (
     <div className="mx-auto max-w-[1200px] px-6 py-12">
@@ -185,22 +209,45 @@ export function AdminDashboardClient({
                   ) : null}
                   {r.status === "under_review" ? (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => handleForward(r.id)}
-                        disabled={busyId === r.id}
-                        className="inline-flex h-7 items-center rounded-md bg-cal-brand px-2.5 text-[11px] font-medium text-cal-bg transition-opacity hover:opacity-90 disabled:opacity-50"
-                      >
-                        Forward
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => feedbackRef.current?.open(r.id, r.title)}
-                        disabled={busyId === r.id}
-                        className="inline-flex h-7 items-center rounded-md border border-cal-border bg-transparent px-2.5 text-[11px] font-medium text-cal-text transition-colors hover:bg-cal-bg-muted"
-                      >
-                        Return
-                      </button>
+                      {r.claimed_by === currentUserId ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleForward(r.id)}
+                            disabled={busyId === r.id}
+                            className="inline-flex h-7 items-center rounded-md bg-cal-brand px-2.5 text-[11px] font-medium text-cal-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+                          >
+                            Forward
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => feedbackRef.current?.open(r.id, r.title)}
+                            disabled={busyId === r.id}
+                            className="inline-flex h-7 items-center rounded-md border border-cal-border bg-transparent px-2.5 text-[11px] font-medium text-cal-text transition-colors hover:bg-cal-bg-muted"
+                          >
+                            Return
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUnclaim(r.id, true)}
+                            disabled={busyId === r.id}
+                            title="Release back to queue"
+                            className="inline-flex h-7 items-center rounded-md border border-cal-border bg-transparent px-2.5 text-[11px] font-medium text-cal-text-secondary transition-colors hover:bg-cal-bg-muted hover:text-cal-text"
+                          >
+                            Unclaim
+                          </button>
+                        </>
+                      ) : isSuper ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUnclaim(r.id, false)}
+                          disabled={busyId === r.id}
+                          title="Force-reassign to queue"
+                          className="inline-flex h-7 items-center rounded-md border border-cal-border bg-transparent px-2.5 text-[11px] font-medium text-cal-text-secondary transition-colors hover:bg-cal-bg-muted hover:text-cal-text"
+                        >
+                          Reassign
+                        </button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>
@@ -227,9 +274,9 @@ function humanError(err: string): string {
     case "forbidden":
       return "Admin only.";
     case "already_claimed":
-      return "Another admin already claimed this.";
+      return "Another admin already claimed this. Refresh to see the latest.";
     case "invalid_state":
-      return "Request is no longer in that state.";
+      return "This request was updated by someone else. Refresh and try again.";
     case "not_claimer":
       return "Only the admin who claimed this can act on it.";
     default:

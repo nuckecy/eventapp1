@@ -28,7 +28,7 @@ import Link from "next/link";
 import { Calendar, Lock } from "lucide-react";
 import { readTenantContextFromHeaders } from "@/lib/tenant";
 import { listAppsForTenant } from "@/lib/cem/tenant-apps";
-import { getSession } from "@/lib/auth/session";
+import { getPlatformSession } from "@/lib/auth/session";
 import { NavBar } from "@/components/nav/nav-bar";
 
 // App slug → CEM-style icon + landing-route registry. Keep all routing
@@ -56,9 +56,13 @@ export default async function LauncherPage(props: {
     redirect("/events");
   }
 
+  // EC-04: launcher is app-agnostic — use the role-less platform
+  // session. EC-05: getPlatformSession also verifies tenant
+  // membership, so a Tenant-A user landing on Tenant B's launcher
+  // sees the generic "Welcome" instead of their own name.
   const [apps, session] = await Promise.all([
     listAppsForTenant(tenant.tenantId),
-    getSession(),
+    getPlatformSession(),
   ]);
   const sp = await props.searchParams;
   const unavailableSlug = typeof sp.unavailable === "string" ? sp.unavailable : null;
