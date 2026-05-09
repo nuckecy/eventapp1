@@ -36,9 +36,12 @@ const TARGET_FILTERS: Array<{ value: string; label: string }> = [
 export function AuditLogClient({
   rows,
   filters,
+  currentLimit,
 }: {
   rows: Row[];
   filters: AuditFilters;
+  /** EC-12: how many rows the server returned. */
+  currentLimit: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -175,6 +178,21 @@ export function AuditLogClient({
           </table>
         )}
       </div>
+
+      {/* EC-12: Load-more pagination. If we got back exactly the limit
+          rows, there's likely more. Doubling-up on click — capped at
+          1000 server-side. */}
+      {rows.length === currentLimit && currentLimit < 1000 ? (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setParam("limit", String(Math.min(currentLimit * 2, 1000)))}
+            className="inline-flex h-8 items-center rounded-md border border-cal-border bg-transparent px-3 text-[12px] font-medium text-cal-text transition-colors hover:bg-cal-bg-muted"
+          >
+            Load older entries
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

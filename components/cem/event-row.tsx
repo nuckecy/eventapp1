@@ -31,6 +31,8 @@ const EVENT_TYPE_STYLES: Record<EventListItem["type"], EventTypeStyle> = {
 export function EventRow({ event, isLast }: { event: EventListItem; isLast: boolean }) {
   const { dayShort, dayNum } = parseEventDate(event.date);
   const style = EVENT_TYPE_STYLES[event.type];
+  // EC-07: cancelled event visual treatment.
+  const isCancelled = event.cancelled_at !== null;
 
   return (
     <div
@@ -51,17 +53,25 @@ export function EventRow({ event, isLast }: { event: EventListItem; isLast: bool
       {/* 3px color bar */}
       <div
         className="h-6 w-[3px] shrink-0 rounded-sm"
-        style={{ backgroundColor: style.hex }}
+        style={{ backgroundColor: isCancelled ? "var(--cal-text-muted)" : style.hex }}
         aria-hidden="true"
       />
 
       {/* Title + meta — wraps if narrow */}
       <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3.5 gap-y-0.5">
-        <span className="whitespace-nowrap text-[13px] font-medium text-cal-text">
+        <span
+          className={`whitespace-nowrap text-[13px] font-medium ${
+            isCancelled ? "text-cal-text-muted line-through" : "text-cal-text"
+          }`}
+        >
           {event.title}
         </span>
         {event.time ? (
-          <span className="whitespace-nowrap text-[12px] text-cal-text-secondary">
+          <span
+            className={`whitespace-nowrap text-[12px] ${
+              isCancelled ? "text-cal-text-muted line-through" : "text-cal-text-secondary"
+            }`}
+          >
             {event.time}
           </span>
         ) : null}
@@ -72,17 +82,30 @@ export function EventRow({ event, isLast }: { event: EventListItem; isLast: bool
         ) : null}
       </div>
 
-      {/* Type badge */}
-      <span
-        className="inline-flex shrink-0 items-center whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-medium"
-        style={{
-          color: style.hex,
-          backgroundColor: `${style.hex}10`, // 6% alpha tint
-          borderColor: `${style.hex}25`, // ~15% alpha
-        }}
-      >
-        {style.label}
-      </span>
+      {/* Cancelled badge takes precedence over type badge. */}
+      {isCancelled ? (
+        <span
+          className="inline-flex shrink-0 items-center whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em]"
+          style={{
+            color: "#dc2626",
+            backgroundColor: "#fef2f2",
+            borderColor: "#fecaca",
+          }}
+        >
+          Cancelled
+        </span>
+      ) : (
+        <span
+          className="inline-flex shrink-0 items-center whitespace-nowrap rounded border px-2 py-0.5 text-[10px] font-medium"
+          style={{
+            color: style.hex,
+            backgroundColor: `${style.hex}10`,
+            borderColor: `${style.hex}25`,
+          }}
+        >
+          {style.label}
+        </span>
+      )}
     </div>
   );
 }

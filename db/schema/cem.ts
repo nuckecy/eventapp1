@@ -30,6 +30,12 @@ export const cemRequestStatusEnum = pgEnum("cem_request_status", [
   "approved",
   "returned",
   "deleted",
+  // EC-07: cancelled = approved event taken off the schedule. The
+  // event row stays in cem_events with deleted_at IS NULL (so it
+  // still shows on the calendar) but the request's status becomes
+  // "cancelled" — the calendar joins on source_request_id to surface
+  // the cancellation.
+  "cancelled",
 ]);
 
 export const cemHolidayTypeEnum = pgEnum("cem_holiday_type", ["public", "church", "special"]);
@@ -80,6 +86,13 @@ export const cemEvents = pgTable("cem_events", {
   // EC-06: soft-delete. Never hard-delete; the request that produced
   // the event references it, audit log references it, etc.
   deleted_at: timestamp("deleted_at"),
+  // EC-07: cancellation. When an approved event is cancelled (weather,
+  // emergency, etc.), set this timestamp. The event stays on the
+  // calendar with a strikethrough/Cancelled badge so members who
+  // already saw it know what happened.
+  cancelled_at: timestamp("cancelled_at"),
+  cancelled_by: uuid("cancelled_by").references(() => coreUsers.id),
+  cancellation_reason: text("cancellation_reason"),
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
 });

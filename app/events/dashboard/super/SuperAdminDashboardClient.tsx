@@ -5,7 +5,7 @@
 // Tabs: Forwarded (ready_for_approval) / Approved / Returned / All.
 // Per-row actions on Forwarded: Approve / Send Back / Delete.
 
-import { Eye, Trash2, FileText, Settings } from "lucide-react";
+import { Eye, Trash2, FileText, Settings, Ban } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,7 @@ import { StatusBadge } from "@/components/cem/status-badge";
 import { useToast } from "@/components/cem/toast";
 import {
   approveRequestAction,
+  cancelEventAction,
   deleteRequestAction,
   sendBackToAdminAction,
 } from "@/lib/cem/request-actions";
@@ -77,6 +78,29 @@ export function SuperAdminDashboardClient({
       toast.show("error", humanError(r.error));
     } else {
       toast.show("success", "Sent back to admin.");
+    }
+    setBusyId(null);
+    startTransition(() => router.refresh());
+  }
+  async function handleCancel(id: string, title: string) {
+    const reason = window.prompt(
+      `Cancel "${title}"?\n\nWhy? (will be shown to all attendees)`,
+      "",
+    );
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 3) {
+      toast.show("error", "Please provide a reason (3+ characters).");
+      return;
+    }
+    setBusyId(id);
+    setError(null);
+    const r = await cancelEventAction({ requestId: id, reason: trimmed });
+    if (!r.ok) {
+      setError(humanError(r.error));
+      toast.show("error", humanError(r.error));
+    } else {
+      toast.show("success", "Event cancelled. Attendees will be notified.");
     }
     setBusyId(null);
     startTransition(() => router.refresh());
@@ -218,6 +242,19 @@ export function SuperAdminDashboardClient({
                         Send back
                       </button>
                     </>
+                  ) : null}
+                  {/* EC-07: cancel an already-approved event. */}
+                  {r.status === "approved" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(r.id, r.title)}
+                      disabled={busyId === r.id}
+                      title="Cancel this event"
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-cal-border bg-transparent px-2.5 text-[11px] font-medium text-cal-text transition-colors hover:bg-[#fef2f2] hover:text-[#dc2626] hover:border-[#fecaca] disabled:opacity-50"
+                    >
+                      <Ban className="h-3 w-3" aria-hidden="true" />
+                      Cancel
+                    </button>
                   ) : null}
                   {r.status !== "deleted" ? (
                     <button

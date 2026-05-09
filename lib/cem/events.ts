@@ -123,6 +123,10 @@ export async function listEvents(
       expected_attendance: cemEvents.expected_attendance,
       department_id: cemEvents.department_id,
       department_name: cemDepartments.name,
+      // EC-07: cancellation flag — calendar styles cancelled events
+      // with strikethrough + a red badge, but still shows them.
+      cancelled_at: cemEvents.cancelled_at,
+      cancellation_reason: cemEvents.cancellation_reason,
     })
     .from(cemEvents)
     .leftJoin(cemDepartments, eq(cemDepartments.id, cemEvents.department_id))

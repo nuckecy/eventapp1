@@ -139,6 +139,20 @@ export const EventDetailModal = forwardRef<
         </form>
       </div>
 
+      {/* EC-07: cancelled banner. */}
+      {event.cancelled_at ? (
+        <div className="border-b border-[#fecaca] bg-[#fef2f2] px-6 py-3">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#dc2626]">
+            This event has been cancelled
+          </p>
+          {event.cancellation_reason ? (
+            <p className="mt-1 text-[13px] text-[#991b1b]">
+              {event.cancellation_reason}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Body */}
       <div className="px-6 py-6">
         <dl className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -21,6 +21,8 @@ type Search = {
   target?: string;
   from?: string;
   to?: string;
+  /** EC-12: page size; clamped 1-1000. Default 50. */
+  limit?: string;
 };
 
 const ALLOWED_TARGETS = new Set(["request", "event", "birthday"]);
@@ -30,11 +32,16 @@ const ALLOWED_ACTION_PREFIXES = new Set([
   "event",
   "request.submitted",
   "request.claimed",
+  "request.unclaimed",
+  "request.reassigned",
+  "request.timed_out",
   "request.forwarded",
   "request.returned",
   "request.approved",
   "request.sent_back",
   "request.deleted",
+  "request.cancelled",
+  "request.recalled",
   "request.draft_created",
   "request.draft_updated",
 ]);
@@ -57,7 +64,14 @@ export default async function AuditLogPage(props: {
     toDate: sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : null,
   };
 
-  const rows = await listAuditLog(session.tenantId, filters, 200);
+  // EC-12: parse and clamp ?limit=. Hard-cap at 1000.
+  const requestedLimit = sp.limit ? Number.parseInt(sp.limit, 10) : 50;
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit >= 1
+      ? Math.min(requestedLimit, 1000)
+      : 50;
+
+  const rows = await listAuditLog(session.tenantId, filters, limit);
 
   return (
     <AuditLogClient
@@ -66,6 +80,7 @@ export default async function AuditLogPage(props: {
         created_at: r.created_at ?? new Date(),
       }))}
       filters={filters}
+      currentLimit={limit}
     />
   );
 }

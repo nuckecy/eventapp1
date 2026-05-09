@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth/session";
 import { listDepartmentNames } from "@/lib/cem/events";
 import { leadStats, listOwnRequests } from "@/lib/cem/requests";
+import { listFeedbackForRequest, type FeedbackEntry } from "@/lib/cem/feedback";
 import { LeadDashboardClient } from "./LeadDashboardClient";
 
 export const metadata = { title: "Lead Dashboard · Church Event Management" };
@@ -26,11 +27,28 @@ export default async function LeadDashboardPage() {
     listDepartmentNames(session.tenantId),
   ]);
 
+  // EC-09: load feedback for any returned request so the lead sees the
+  // full conversation thread inline. Only load for "returned" status to
+  // avoid the N+1 cost on every row.
+  const feedbackByRequest: Record<string, FeedbackEntry[]> = {};
+  const returnedIds = requests
+    .filter((r) => r.status === "returned")
+    .map((r) => r.id);
+  if (returnedIds.length > 0) {
+    const fbs = await Promise.all(
+      returnedIds.map((id) => listFeedbackForRequest(session.tenantId, id)),
+    );
+    returnedIds.forEach((id, i) => {
+      feedbackByRequest[id] = fbs[i];
+    });
+  }
+
   return (
     <LeadDashboardClient
       stats={stats}
       requests={requests}
       departments={departments}
+      feedbackByRequest={feedbackByRequest}
     />
   );
 }

@@ -330,6 +330,75 @@ export async function submitRequest(
   }
 }
 
+/**
+ * EC-08: Lead recalls a request they just submitted, before any admin
+ * has claimed it. Reverts status from 'submitted' to 'draft'. Once an
+ * admin claims (status='under_review'), recall is no longer allowed —
+ * the lead must wait for return or work with the admin.
+ *
+ * Optimistic-locked: the WHERE gates on status='submitted' AND
+ * submitted_by=leadUserId. Either condition raced (admin claimed,
+ * status moved) returns 0 rows and we throw.
+ */
+export async function recallRequest(
+  tenantId: string,
+  leadUserId: string,
+  requestId: string,
+): Promise<void> {
+  const existing = await db
+    .select({
+      id: cemRequests.id,
+      status: cemRequests.status,
+      submitted_by: cemRequests.submitted_by,
+      title: cemRequests.title,
+    })
+    .from(cemRequests)
+    .where(and(eq(cemRequests.id, requestId), eq(cemRequests.tenant_id, tenantId)))
+    .limit(1);
+  if (existing.length === 0) throw new Error("not_found");
+  if (existing[0].status !== "submitted") throw new Error("invalid_state");
+  if (existing[0].submitted_by !== leadUserId) throw new Error("not_owner");
+
+  const result = await db
+    .update(cemRequests)
+    .set({ status: "draft", submitted_at: null, updated_at: new Date() })
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "submitted"),
+        eq(cemRequests.submitted_by, leadUserId),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (result.length === 0) throw new Error("invalid_state");
+
+  await db.insert(cemAuditLog).values({
+    tenant_id: tenantId,
+    actor_id: leadUserId,
+    action: "request.recalled",
+    target_type: "request",
+    target_id: requestId,
+    metadata: JSON.stringify({ title: existing[0].title }),
+  });
+
+  // Notify all admins/superadmins so their queue updates. Recall is
+  // friction-free for the lead — no admin had claimed it yet — so
+  // the notification body is informational only.
+  const recipients = await getUsersByRoles(tenantId, ["admin", "superadmin"]);
+  for (const recipient of recipients) {
+    await createNotification({
+      tenantId,
+      recipientUserId: recipient,
+      type: "request.recalled",
+      title: "Request recalled",
+      body: `"${existing[0].title}" was recalled by the submitter.`,
+      referenceType: "request",
+      referenceId: requestId,
+    });
+  }
+}
+
 export async function claimRequest(
   tenantId: string,
   adminUserId: string,
@@ -852,6 +921,106 @@ export async function sendBackRequestToAdmin(
       type: "request.sent_back",
       title: "Sent back for revision",
       body: `"${existing[0].title}" needs more work before approval.`,
+      referenceType: "request",
+      referenceId: requestId,
+    });
+  }
+}
+
+/**
+ * EC-07: Cancel an approved event. Used by Super Admin when a published
+ * event needs to be called off (weather, emergency, etc.).
+ *
+ * Behaviour:
+ *   - cem_requests.status flips from 'approved' to 'cancelled'.
+ *   - cem_events.cancelled_at / cancelled_by / cancellation_reason set.
+ *     The event row STAYS on the calendar (deleted_at remains null) so
+ *     members who already saw it can see the cancellation.
+ *   - Audit log entry written.
+ *   - Notification fan-out to all tenant members so they know.
+ *
+ * Optimistic-locked: only flips the request if it is currently
+ * 'approved' AND has an event row. Race with delete is handled — if
+ * delete already fired, the request status is 'deleted', not
+ * 'approved', so the gate fails.
+ */
+export async function cancelEvent(
+  tenantId: string,
+  superUserId: string,
+  requestId: string,
+  reason: string,
+): Promise<void> {
+  const rows = await db
+    .select({
+      id: cemRequests.id,
+      status: cemRequests.status,
+      title: cemRequests.title,
+      submitted_by: cemRequests.submitted_by,
+      claimed_by: cemRequests.claimed_by,
+    })
+    .from(cemRequests)
+    .where(and(eq(cemRequests.id, requestId), eq(cemRequests.tenant_id, tenantId)))
+    .limit(1);
+  if (rows.length === 0) throw new Error("not_found");
+  const r = rows[0];
+  if (r.status !== "approved") throw new Error("invalid_state");
+
+  const now = new Date();
+
+  // Flip the request, gated on still-approved.
+  const flipped = await db
+    .update(cemRequests)
+    .set({ status: "cancelled", updated_at: now })
+    .where(
+      and(
+        eq(cemRequests.id, requestId),
+        eq(cemRequests.tenant_id, tenantId),
+        eq(cemRequests.status, "approved"),
+      ),
+    )
+    .returning({ id: cemRequests.id });
+  if (flipped.length === 0) throw new Error("invalid_state");
+
+  // Mark the event cancelled. The event stays visible on the calendar
+  // with strikethrough — it's not deleted.
+  await db
+    .update(cemEvents)
+    .set({
+      cancelled_at: now,
+      cancelled_by: superUserId,
+      cancellation_reason: reason,
+      updated_at: now,
+    })
+    .where(
+      and(
+        eq(cemEvents.tenant_id, tenantId),
+        eq(cemEvents.source_request_id, requestId),
+      ),
+    );
+
+  await db.insert(cemAuditLog).values({
+    tenant_id: tenantId,
+    actor_id: superUserId,
+    action: "request.cancelled",
+    target_type: "request",
+    target_id: requestId,
+    metadata: JSON.stringify({ reason: reason.slice(0, 500) }),
+  });
+
+  // Notify the submitter, the claiming admin, and (optionally) all
+  // tenant members. For now: stakeholders only — broadcast to
+  // members would require fetching all tenant_users which is fine
+  // but bigger. Stakeholders cover the people who need to know now.
+  const recipients = new Set<string>();
+  if (r.submitted_by) recipients.add(r.submitted_by);
+  if (r.claimed_by) recipients.add(r.claimed_by);
+  for (const recipient of recipients) {
+    await createNotification({
+      tenantId,
+      recipientUserId: recipient,
+      type: "request.cancelled",
+      title: "Event cancelled",
+      body: `"${r.title}" was cancelled. Reason: ${reason.slice(0, 200)}`,
       referenceType: "request",
       referenceId: requestId,
     });

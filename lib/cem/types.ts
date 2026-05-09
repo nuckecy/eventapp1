@@ -16,6 +16,9 @@ export type EventListItem = {
   expected_attendance: number | null;
   department_id: string | null;
   department_name: string | null;
+  /** EC-07: non-null = cancelled. Calendar renders strikethrough + badge. */
+  cancelled_at: Date | null;
+  cancellation_reason: string | null;
 };
 
 // ── Holiday types (F09) ─────────────────────────────────────────────
@@ -46,7 +49,8 @@ export type RequestStatus =
   | "ready_for_approval"
   | "approved"
   | "returned"
-  | "deleted";
+  | "deleted"
+  | "cancelled"; // EC-07
 
 export type EventRequestType = "sunday" | "regional" | "local";
 
@@ -72,6 +76,8 @@ export const STATUS_STYLES: Record<
   approved: { label: "Approved", bg: "#f0fdf4", text: "#166534", border: "#86efac" },
   returned: { label: "Returned", bg: "#fef2f2", text: "#991b1b", border: "#fecaca" },
   deleted: { label: "Deleted", bg: "#fef2f2", text: "#991b1b", border: "#fca5a5" },
+  // EC-07
+  cancelled: { label: "Cancelled", bg: "#fef2f2", text: "#dc2626", border: "#fecaca" },
 };
 
 export type RequestListItem = {

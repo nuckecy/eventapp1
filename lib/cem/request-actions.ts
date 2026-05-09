@@ -11,10 +11,12 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth/session";
 import {
   approveAndPublishRequest,
+  cancelEvent,
   claimRequest,
   createRequestDraft,
   deleteRequest,
   forwardRequest,
+  recallRequest,
   returnRequest,
   sendBackRequestToAdmin,
   submitRequest,
@@ -95,6 +97,25 @@ export async function updateDraftAction(
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "update_failed" };
+  }
+}
+
+/**
+ * EC-08: Lead recalls their own submitted-but-not-yet-claimed request.
+ */
+export async function recallRequestAction(requestId: unknown): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "unauthorized" };
+  if (!isLead(session.role)) return { ok: false, error: "forbidden" };
+  const id = UuidSchema.safeParse(requestId);
+  if (!id.success) return { ok: false, error: "invalid_payload" };
+  try {
+    await recallRequest(session.tenantId, session.userId, id.data);
+    revalidatePath("/events/dashboard/lead");
+    revalidatePath("/events/dashboard/admin");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "recall_failed" };
   }
 }
 
@@ -198,6 +219,35 @@ export async function sendBackToAdminAction(requestId: unknown): Promise<ActionR
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "send_back_failed" };
+  }
+}
+
+const CancelInput = z.object({
+  requestId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(500),
+});
+
+/**
+ * EC-07: Cancel an approved event. Super admin only.
+ */
+export async function cancelEventAction(input: unknown): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "unauthorized" };
+  if (!isSuper(session.role)) return { ok: false, error: "forbidden" };
+  const parsed = CancelInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "invalid_payload" };
+  try {
+    await cancelEvent(
+      session.tenantId,
+      session.userId,
+      parsed.data.requestId,
+      parsed.data.reason,
+    );
+    revalidatePath("/events/dashboard/super");
+    revalidatePath("/events");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "cancel_failed" };
   }
 }
 
