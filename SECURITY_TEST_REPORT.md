@@ -1,9 +1,89 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F07)
+**Latest run:** 2026-05-08 (F08)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F08 — Departments Page (2026-05-08)
+
+**Files audited:**
+`db/schema/cem.ts` (`lead_name` added), `drizzle/0002_add_lead_name.sql`, `db/seed.ts` (lead_name backfill), `lib/cem/departments.ts`, `components/cem/department-card.tsx`, `components/cem/login-prompt-banner.tsx`, `app/events/departments/page.tsx`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F08 acceptance.**
+
+### Verified controls (F08 security checkpoint per CLAUDE.md)
+
+- [x] **`/api/departments` does NOT return email/phone for unauthenticated requests.** We don't ship a `/api/` endpoint per se — instead the server-rendered Departments page is the data boundary. The page chooses one of two queries based on `getSession()` (which validates the JWT against the Supabase Auth server). The public projection (`listDepartmentsPublic`) doesn't even SELECT `email`/`phone` from the DB; the authenticated projection does. **The data-access layer makes contact-detail leakage type-impossible for anonymous requests** — the public DTO type does not have those fields.
+- [x] **Auth check is server-side.** `getSession()` calls `supabase.auth.getUser()` server-side, which re-validates against the Auth server (per F03's defense-in-depth rule). Client-side hiding is not used at all.
+
+### Live verification (the F08 critical test)
+
+Loaded `/events/departments` as an anonymous visitor and grep'd the HTML:
+
+| Anonymous user sees | Result |
+|---|---|
+| HTTP 200 | ✓ |
+| 6 department names rendered | ✓ |
+| 6 lead names rendered (Otobong, Sister Mary, Pastor John, Bro David, Sister Grace, Elder Peter) | ✓ |
+| "Log in to view contact details" prompt visible | ✓ (8 occurrences: 1 banner + 6 card prompts + 1 React flight payload) |
+| **otobong.okoko@church.com in HTML** | **0 ✓** |
+| **mary.johnson@church.com in HTML** | **0 ✓** |
+| **john.emmanuel@church.com in HTML** | **0 ✓** |
+| **david.thompson@church.com in HTML** | **0 ✓** |
+| **grace.obi@church.com in HTML** | **0 ✓** |
+| **peter.adeyemi@church.com in HTML** | **0 ✓** |
+| **+49 176 ... (any of the 6 phone numbers)** | **0 ✓** |
+
+**0 of 12 sensitive contact strings** (6 emails + 6 phones) leak into the anonymous HTML. Verified by automated grep.
+
+### Defense-in-depth additions (this feature)
+
+- **Type-level guarantee.** `DepartmentPublic` is a TypeScript type that simply has no `email`/`phone` keys. A future contributor refactoring the public path can't accidentally pass through contact data without TypeScript flagging it. Belt-and-braces on top of the runtime SELECT-list constraint.
+- **`listDepartmentsAuthenticated` does not re-check session itself.** It trusts the caller (the page) to have verified auth. Documented prominently in the source. This is a deliberate trade-off: a single auth check at the route boundary is easier to reason about than per-query checks scattered through the data layer; tenant isolation remains unconditional.
+- **`mailto:` and `tel:` links generated server-side.** No client-side string construction; the email/phone are static at HTML render time and never present in the JS bundle for the anonymous case.
+- **`encodeURIComponent` on the login banner's `?next=` param.** Prevents query-param injection from the path. The login flow itself (F03) already validates `next` via `safeNextPath()` before redirecting.
+- **Schema migration is additive only.** `0002_add_lead_name.sql` adds a nullable column — no data destruction, no breaking change to RLS policies.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F08 files | none |
+| `sql.raw` / SQL string interpolation | none — Drizzle helpers only |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` | none |
+| `server-only` on data-access modules | ✅ `lib/cem/departments.ts` line 19 |
+| Tenant scoping in every query | ✅ both functions filter by `tenant_id` |
+| Email/phone in public DTO | **none** — TypeScript-enforced |
+| Auth check server-side | ✅ `getSession()` (Supabase `getUser()` validation) |
+
+### Acceptance verification
+
+| Scenario | Expected | Observed |
+|------|----------|----------|
+| `/events/departments` (anonymous) | 6 cards, banner, all locked | ✓ |
+| Department names + lead names render | All 6 of each | ✓ |
+| Email/phone visible to anonymous user | NEVER | ✓ 0 leaks across 12 sensitive strings |
+| Lock prompt on each card | Yes | ✓ 6 cards × 1 prompt + 1 banner = 7 (HTML grep returned 8 due to 1 React flight duplicate, harmless) |
+| Production build, all 14 routes | clean | ✓ |
+| TypeScript strict | 0 errors | ✓ |
+
+### Carry-over from F01–F07
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 

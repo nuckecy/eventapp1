@@ -1,0 +1,1 @@
+ALTER TABLE "cem_departments" ADD COLUMN "lead_name" text;

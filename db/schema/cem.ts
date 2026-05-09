@@ -42,6 +42,11 @@ export const cemDepartments = pgTable("cem_departments", {
     .references(() => coreTenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   icon: text("icon"), // emoji or icon key
+  // Display name for the lead. Always populated. When `lead_user_id`
+  // is set, this is typically the same as that user's `name`; when
+  // there's no linked user (text-only contact), this carries the
+  // canonical display name on its own. Added in F08.
+  lead_name: text("lead_name"),
   lead_user_id: uuid("lead_user_id").references(() => coreUsers.id),
   email: text("email"),
   phone: text("phone"),
