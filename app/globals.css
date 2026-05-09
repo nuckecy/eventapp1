@@ -249,4 +249,19 @@
       scroll-behavior: auto !important;
     }
   }
+
+  /*
+   * Native <dialog> centering (post-EDGE_CASES bug fix).
+   *
+   * Tailwind v4's Preflight resets the user-agent dialog styles to
+   * `position: static`, which makes showModal()-opened dialogs render
+   * at the top-left instead of centered. Explicitly restore the
+   * UA-style centering via fixed positioning + auto margins, but only
+   * for the OPEN state so closed dialogs don't reserve layout space.
+   */
+  dialog[open] {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+  }
 }

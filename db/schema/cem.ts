@@ -40,6 +40,18 @@ export const cemRequestStatusEnum = pgEnum("cem_request_status", [
 
 export const cemHolidayTypeEnum = pgEnum("cem_holiday_type", ["public", "church", "special"]);
 
+// Scripture themes — used to tag curated verses so the daily-rotation
+// can balance categories. Open enum (text column) so tenants can add
+// custom themes without migrations.
+export const SCRIPTURE_THEMES = [
+  "faith",
+  "grace",
+  "spirit",
+  "hope",
+  "love",
+] as const;
+export type ScriptureTheme = (typeof SCRIPTURE_THEMES)[number];
+
 // ── cem_departments ───────────────────────────────────────────────────
 
 export const cemDepartments = pgTable("cem_departments", {
@@ -258,4 +270,68 @@ export const cemNotifications = pgTable("cem_notifications", {
   read: boolean("read").default(false),
   muted: boolean("muted").default(false),
   created_at: timestamp("created_at").defaultNow(),
+});
+
+// ── cem_tenant_settings (per-tenant feature flags + preferences) ────
+//
+// One row per tenant (PK on tenant_id). Holds boolean toggles and
+// other tenant-specific app settings. Adding a new flag is a new
+// column + a default — no migration drama.
+//
+// Today: just `scripture_enabled`. Future: notification preferences,
+// custom logo url, theme color, etc. The table exists now so we don't
+// have to create it later under pressure.
+//
+// SECURITY:
+// - Tenant-scoped by primary key.
+// - Reads from public surfaces (e.g. login page checking whether to
+//   show scripture) require no auth; defaults are safe to expose.
+// - Mutations gated to super admin (tenant level) at the action layer.
+
+export const cemTenantSettings = pgTable("cem_tenant_settings", {
+  tenant_id: uuid("tenant_id")
+    .primaryKey()
+    .references(() => coreTenants.id, { onDelete: "cascade" }),
+  // Daily Scripture: tenant chooses to display the platform-curated
+  // verse panel on their login page or fall back to the brand tagline.
+  // Defaults to true so the experience is alive out of the box.
+  scripture_enabled: boolean("scripture_enabled").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// ── cem_scriptures (platform-global curated verse references) ───────
+//
+// Stores REFERENCES only (e.g. "John 3:16"), not verse text. The login
+// page picks a random active row and the active scripture provider
+// fetches the verse text on demand. This sidesteps any redistribution-
+// licensing question entirely — we only ever store + display what the
+// upstream provider returns at request time, with their attribution.
+//
+// SECURITY:
+// - PLATFORM-GLOBAL (intentionally not tenant-scoped). Scripture isn't
+//   sensitive data; one curated list serves every tenant + the bare
+//   platform domain. This makes the login page work pre-auth on any
+//   host (no tenant subdomain required).
+// - Public SELECT via RLS — login is pre-auth so anonymous visitors
+//   must be able to read.
+// - Insert/update/delete restricted to platform admin via RLS +
+//   the action layer.
+
+export const cemScriptures = pgTable("cem_scriptures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Canonical reference, e.g. "Romans 8:38-39" or "Ephesians 2:8".
+  // Free-text for now; format validated at the action layer.
+  reference: text("reference").notNull(),
+  // The translation to load FIRST when this verse is shown. The user
+  // can switch via chevron at runtime; this is just the default.
+  default_translation: text("default_translation").default("KJV"),
+  // Optional theme tag. Open string for flexibility; UI offers a
+  // curated set in a dropdown.
+  theme: text("theme"),
+  // Soft-disable a verse without deleting (preserves audit trail of
+  // what was once curated).
+  active: boolean("active").default(true),
+  created_at: timestamp("created_at").defaultNow(),
+  created_by: uuid("created_by").references(() => coreUsers.id),
 });

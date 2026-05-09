@@ -1,31 +1,27 @@
-// Tenant App Launcher (F21).
+// Apex/launcher router.
 //
-// When the request resolves to a tenant context (via the middleware-
-// injected headers), this page renders cards for every app in the
-// platform registry. Apps the tenant has enabled link into the app;
-// apps they don't are shown as greyed-out "not available" tiles per
-// the F21 acceptance criteria — the user gets a discoverable list,
-// not a 404.
+// This single page serves two distinct surfaces, branched on whether
+// the request has tenant context (set by middleware):
 //
-// When there's no tenant context (visiting the platform apex domain),
-// we still redirect to /events as a fallback for v1; that route's
-// public surface (Calendar / Holidays / Birthdays) doesn't strictly
-// require a tenant header in dev, and will be handled by the platform
-// landing in a future release.
+//   1. NO tenant context (bare apex like `localhost:3000` or
+//      `[domain].com`) → MARKETING LANDING. A public, anonymous-
+//      friendly hero that links to the demo tenant + signup.
+//
+//   2. WITH tenant context (e.g. `demo.localhost:3000`,
+//      `[tenant].[domain].com`) → TENANT APP LAUNCHER (F21). Cards
+//      for every app the platform offers; enabled apps link into
+//      the app, disabled apps render as greyed "Not available" tiles.
 //
 // SECURITY:
-// - All queries are tenant-scoped via the headers — middleware is the
-//   only writer of those headers, validated at the edge.
-// - App enablement is read server-side; the launcher's "not available"
-//   tile is cosmetic. The downstream layout (e.g. /events) checks
-//   enablement independently before rendering the app — a user who
-//   types the URL directly is redirected back here with the same
-//   notice.
+// - All queries are tenant-scoped via the middleware-injected headers.
+// - App enablement is server-rendered; the launcher's "not available"
+//   tile is cosmetic — `app/events/layout.tsx` independently gates
+//   the CEM surface on tenant enablement.
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Calendar, Lock } from "lucide-react";
+import { Calendar, Lock, ArrowRight } from "lucide-react";
 import { readTenantContextFromHeaders } from "@/lib/tenant";
 import { listAppsForTenant } from "@/lib/cem/tenant-apps";
 import { getPlatformSession } from "@/lib/auth/session";
@@ -49,10 +45,17 @@ export default async function LauncherPage(props: {
   const requestHeaders = await headers();
   const tenant = readTenantContextFromHeaders(requestHeaders);
 
-  // Platform domain (no tenant header). For v1 we hand visitors
-  // through to the public CEM calendar — the platform landing page
-  // is a future feature.
+  // No tenant context → render the marketing landing.
   if (!tenant) {
+    return <MarketingLanding />;
+  }
+
+  // Demo tenant: skip the launcher entirely. The demo exists to show
+  // the product in action — drop visitors straight into the calendar
+  // (the most visually engaging surface) rather than make them pick
+  // an app card. Real tenants still see the launcher at `/`.
+  const sp = await props.searchParams;
+  if (tenant.tenantSlug === "demo") {
     redirect("/events");
   }
 
@@ -64,7 +67,6 @@ export default async function LauncherPage(props: {
     listAppsForTenant(tenant.tenantId),
     getPlatformSession(),
   ]);
-  const sp = await props.searchParams;
   const unavailableSlug = typeof sp.unavailable === "string" ? sp.unavailable : null;
 
   // Sort: enabled apps first, then alphabetical.
@@ -186,5 +188,103 @@ function AppCard({
         </p>
       ) : null}
     </div>
+  );
+}
+
+// ── Marketing Landing ──────────────────────────────────────────────
+//
+// Rendered when the request has no tenant context (bare apex). This
+// is intentionally minimal: a hero, a "see the demo" link to the
+// demo tenant, and a "get started" link that will eventually point
+// at the signup flow. It's a placeholder — the eventual marketing
+// site will likely live as its own project; this gives us something
+// real to show today on bare localhost / the platform apex.
+
+function MarketingLanding() {
+  // The demo URL is constructed at render time from the current host.
+  // In dev this becomes `demo.localhost:PORT`; in prod it would be
+  // `demo.[domain].com`. Falls back to `/` if we can't introspect.
+  // Note: this is a server component, so we can't read window.location
+  // — instead we rely on a relative link and let the host hint the
+  // user's browser does the right thing (the demo subdomain is on
+  // the same parent host).
+  // Land directly on the calendar — the most visually engaging
+  // surface — rather than the launcher. (The demo's own `/` already
+  // redirects to /events; this skips that hop.)
+  const demoHref = "//demo.localhost:3000/events";
+
+  return (
+    <main className="min-h-screen bg-cal-bg text-cal-text">
+      {/* Top brand bar — minimal, no nav links yet. */}
+      <header className="mx-auto flex max-w-[1200px] items-center justify-between px-6 py-6">
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-cal-brand text-cal-bg font-display text-[16px] font-medium"
+          >
+            C
+          </span>
+          <span className="font-display text-[16px] font-medium tracking-[-0.01em]">
+            Church Events
+          </span>
+        </div>
+        <Link
+          href="/login"
+          className="inline-flex h-9 items-center rounded-lg border border-cal-border bg-transparent px-4 text-[13px] font-medium text-cal-text transition-colors hover:bg-cal-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"
+        >
+          Sign in
+        </Link>
+      </header>
+
+      {/* Hero. Generous vertical padding; copy intentionally generic
+          since the real marketing positioning is still being decided. */}
+      <section className="mx-auto max-w-[1200px] px-6 pb-20 pt-16 sm:pt-24">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cal-text-muted">
+          Church management, made simple.
+        </p>
+        <h1 className="mt-4 max-w-[820px] font-display text-[44px] font-medium leading-[1.05] tracking-[-0.02em] sm:text-[56px]">
+          One calendar. Every event.
+          <br />
+          <span className="text-cal-text-secondary">Approved together.</span>
+        </h1>
+        <p className="mt-6 max-w-[600px] text-[16px] leading-relaxed text-cal-text-secondary">
+          Plan, approve, and publish your community&rsquo;s events from a
+          single source of truth. Departments, holidays, and birthdays —
+          shared with your members. Built for churches.
+        </p>
+
+        <div className="mt-10 flex flex-wrap items-center gap-3">
+          <Link
+            href={demoHref}
+            className="group inline-flex h-12 items-center gap-2 rounded-xl bg-cal-brand px-6 text-[15px] font-semibold text-cal-bg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"
+          >
+            See the demo
+            <ArrowRight
+              className="h-4 w-4 transition-transform group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
+          </Link>
+          <Link
+            href="/login"
+            className="inline-flex h-12 items-center rounded-xl border border-cal-border bg-transparent px-6 text-[15px] font-medium text-cal-text transition-colors hover:bg-cal-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"
+          >
+            Get started
+          </Link>
+        </div>
+
+        <p className="mt-6 text-[13px] text-cal-text-muted">
+          The demo opens in your browser at{" "}
+          <code className="rounded bg-cal-bg-subtle px-1.5 py-0.5 font-mono text-[12px]">
+            demo.localhost:3000
+          </code>
+          {" "}— a fully populated example tenant.
+        </p>
+      </section>
+
+      {/* Quiet footer. Real marketing site will replace this. */}
+      <footer className="mx-auto max-w-[1200px] border-t border-cal-border px-6 py-8 text-[12px] text-cal-text-muted">
+        <p>Pre-release preview. Marketing site coming soon.</p>
+      </footer>
+    </main>
   );
 }

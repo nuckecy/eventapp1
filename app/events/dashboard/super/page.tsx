@@ -20,5 +20,11 @@ export default async function SuperAdminDashboardPage() {
     listAllRequests(session.tenantId),
   ]);
 
-  return <SuperAdminDashboardClient stats={stats} requests={requests} />;
+  return (
+    <SuperAdminDashboardClient
+      stats={stats}
+      requests={requests}
+      isPlatformAdmin={session.role === "platform_admin"}
+    />
+  );
 }

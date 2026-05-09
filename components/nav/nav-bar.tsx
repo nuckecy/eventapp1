@@ -21,13 +21,15 @@
 //   does not reflect any user-controlled data.
 
 import Link from "next/link";
-import { LogOut } from "lucide-react";
+import { headers } from "next/headers";
+import { ArrowLeft, LogOut } from "lucide-react";
 import { getSession } from "@/lib/auth/session";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { RoleBadge } from "@/components/role-badge";
 import { NavLink } from "@/components/nav/nav-link";
 import { countUnread } from "@/lib/cem/notifications";
+import { readTenantContextFromHeaders } from "@/lib/tenant";
 
 const APP_BASE = "/events";
 
@@ -52,6 +54,38 @@ export async function NavBar() {
   const initialUnread = session
     ? await countUnread(session.tenantId, session.userId)
     : 0;
+
+  // ── Demo "Back to home" affordance ──────────────────────────────
+  //
+  // The demo tenant is a public showcase; we want a clear "exit" back
+  // to the marketing apex. Real tenants don't get this link — once
+  // they're inside their workspace, "home" means the launcher, not
+  // the marketing site.
+  //
+  // Detection: current tenant slug === "demo". Simple, explicit. If
+  // we ever support multiple demo tenants we'll move this to an
+  // `is_demo` column on core_tenants — one-line change here.
+  //
+  // The apex href is computed from the request's Host header by
+  // stripping the leading subdomain. From `demo.localhost:3000` we
+  // get `localhost:3000`. From `demo.[domain].com` we'd get
+  // `[domain].com`. Protocol-relative `//` so it works on http (dev)
+  // and https (prod) without inspecting either.
+  const requestHeaders = await headers();
+  const tenantCtx = readTenantContextFromHeaders(requestHeaders);
+  const isDemoTenant = tenantCtx?.tenantSlug === "demo";
+  let demoExitHref: string | null = null;
+  if (isDemoTenant) {
+    const host = requestHeaders.get("host") ?? "";
+    // Strip the first label (the tenant subdomain). If there are
+    // fewer than 2 dots after stripping, we'd hit an apex like
+    // "com" — refuse and fall back to "/" (in-app, will resolve
+    // to launcher), so we never produce a wrong URL.
+    const apexHost = host.split(".").slice(1).join(".");
+    demoExitHref = apexHost.includes(".") || apexHost.startsWith("localhost")
+      ? `//${apexHost}`
+      : "/";
+  }
 
   return (
     <header
@@ -97,6 +131,20 @@ export async function NavBar() {
 
         {/* ── Right: user actions ────────────────────────────────── */}
         <div className="flex items-center gap-2">
+          {/* Demo-only: back to the marketing apex. Sits just before
+              the theme toggle so it's near the other "leave / switch
+              context" affordances. Real tenants don't render this. */}
+          {demoExitHref ? (
+            <Link
+              href={demoExitHref}
+              title="Back to home"
+              aria-label="Back to home"
+              className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-cal-text-secondary transition-colors hover:bg-cal-bg-muted hover:text-cal-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Home
+            </Link>
+          ) : null}
           <ThemeToggle />
 
           {session ? (

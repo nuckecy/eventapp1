@@ -14,11 +14,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  cemDepartments,
-  cemEvents,
-  coreTenants,
-} from "@/db/schema";
+import { cemDepartments, cemEvents } from "@/db/schema";
 import { readTenantContextFromHeaders } from "@/lib/tenant";
 import { EVENT_TYPES, type EventListItem, type EventType } from "./types";
 
@@ -39,29 +35,21 @@ export type EventListFilters = {
 
 // ── Tenant resolution ────────────────────────────────────────────────
 //
-// In production, the F02 middleware sets `x-tenant-id` on every
-// in-tenant request. In dev (when visiting `localhost:3000` directly,
-// no subdomain) we fall back to the single seeded tenant if there's
-// exactly one. Never silently expose data across tenants in
-// production.
+// The F02 middleware sets `x-tenant-id` on every in-tenant request
+// (subdomain or custom domain). When that header is missing, we
+// return null — the request is on the marketing apex (no tenant),
+// and the calling page should render a non-tenant-scoped surface
+// (the marketing landing) rather than fall through to anyone's data.
+//
+// Earlier, dev had a "fall back to the single seeded tenant" behaviour
+// here. That was removed when the demo tenant was introduced: bare
+// localhost is now explicitly the marketing apex, demo.localhost is
+// the demo tenant. They must not bleed into each other.
 
 export async function getCurrentTenantId(): Promise<string | null> {
   const requestHeaders = await headers();
   const ctx = readTenantContextFromHeaders(requestHeaders);
-  if (ctx) return ctx.tenantId;
-
-  // Dev fallback: only used when no tenant header is set (i.e.
-  // localhost). If there's exactly one active tenant in the database,
-  // use it. If there's more than one, refuse — the caller must use a
-  // subdomain.
-  if (process.env.NODE_ENV === "production") return null;
-  const tenants = await db
-    .select({ id: coreTenants.id })
-    .from(coreTenants)
-    .where(eq(coreTenants.status, "active"))
-    .limit(2);
-  if (tenants.length === 1) return tenants[0].id;
-  return null;
+  return ctx?.tenantId ?? null;
 }
 
 // ── Public API ───────────────────────────────────────────────────────

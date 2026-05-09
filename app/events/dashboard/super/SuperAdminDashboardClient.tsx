@@ -5,7 +5,7 @@
 // Tabs: Forwarded (ready_for_approval) / Approved / Returned / All.
 // Per-row actions on Forwarded: Approve / Send Back / Delete.
 
-import { Eye, Trash2, FileText, Settings, Ban } from "lucide-react";
+import { Eye, Trash2, FileText, Settings, Ban, BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -32,9 +32,12 @@ const TABS: Array<{ key: TabKey; label: string; statuses?: RequestStatus[] }> = 
 export function SuperAdminDashboardClient({
   stats,
   requests,
+  isPlatformAdmin = false,
 }: {
   stats: { forwarded: number; approved: number; returned: number; totalRequests: number };
   requests: RequestListItem[];
+  /** Only platform admins see the Scriptures link; the curated list is platform-wide. */
+  isPlatformAdmin?: boolean;
 }) {
   const [tab, setTab] = useState<TabKey>("forwarded");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -139,6 +142,16 @@ export function SuperAdminDashboardClient({
             <FileText className="h-3.5 w-3.5" aria-hidden="true" />
             Audit Log
           </Link>
+          {/* Platform-admin only: scripture is global, not tenant-scoped. */}
+          {isPlatformAdmin ? (
+            <Link
+              href="/events/dashboard/super/scriptures"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-cal-border bg-transparent px-4 text-[13px] font-medium text-cal-text transition-colors hover:bg-cal-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"
+            >
+              <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              Scriptures
+            </Link>
+          ) : null}
           <Link
             href="/events/dashboard/super/settings"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-cal-border bg-transparent px-4 text-[13px] font-medium text-cal-text transition-colors hover:bg-cal-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2"

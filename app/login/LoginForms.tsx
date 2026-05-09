@@ -32,37 +32,43 @@ export function LoginForms({ next }: { next?: string }) {
   );
 
   return (
-    <div className="grid w-full max-w-[360px] gap-7">
+    <div className="grid w-full max-w-[420px] gap-6">
       {/* ── Password form ─────────────────────────────────────────── */}
       <form action={pwSubmit} className="grid gap-3">
-        <h2 className="m-0 text-[14px] font-medium uppercase tracking-[0.06em] text-cal-text-secondary">
-          Sign in with password
-        </h2>
         {next ? <input type="hidden" name="next" value={next} /> : null}
-        <Field label="Email">
-          <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            className={fieldClasses}
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            className={fieldClasses}
-          />
-        </Field>
+
+        {/* Airbnb-style grouped field stack: one bordered container
+            with two stacked inputs sharing a divider. */}
+        <div className="overflow-hidden rounded-xl border border-cal-border bg-cal-bg transition-colors focus-within:border-cal-accent focus-within:ring-2 focus-within:ring-cal-accent/15">
+          <FloatingField label="Email">
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              placeholder=" "
+              className={floatingInputClasses + " rounded-t-xl"}
+            />
+          </FloatingField>
+          <div className="h-px bg-cal-border" aria-hidden="true" />
+          <FloatingField label="Password">
+            <input
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              required
+              placeholder=" "
+              className={floatingInputClasses + " rounded-b-xl"}
+            />
+          </FloatingField>
+        </div>
+
         <button
           type="submit"
           disabled={pwPending}
-          className="mt-2 inline-flex h-10 items-center justify-center rounded-lg bg-cal-brand px-4 text-[13px] font-medium text-cal-bg transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2 disabled:opacity-60"
+          className="mt-1 inline-flex h-12 items-center justify-center rounded-xl bg-cal-brand px-4 text-[15px] font-semibold text-cal-bg transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2 disabled:opacity-60"
         >
-          {pwPending ? "Signing in..." : "Sign in"}
+          {pwPending ? "Signing in…" : "Sign in"}
         </button>
         {pwState.error ? (
           <p
@@ -74,29 +80,40 @@ export function LoginForms({ next }: { next?: string }) {
         ) : null}
       </form>
 
-      <hr className="m-0 border-0 border-t border-cal-border" />
+      {/* ── Divider with "or" ─────────────────────────────────────── */}
+      <div
+        role="separator"
+        aria-label="or"
+        className="flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.08em] text-cal-text-muted"
+      >
+        <span className="h-px flex-1 bg-cal-border" aria-hidden="true" />
+        or
+        <span className="h-px flex-1 bg-cal-border" aria-hidden="true" />
+      </div>
 
       {/* ── Magic link form ───────────────────────────────────────── */}
       <form action={mlSubmit} className="grid gap-3">
-        <h2 className="m-0 text-[14px] font-medium uppercase tracking-[0.06em] text-cal-text-secondary">
-          Or get a sign-in link by email
-        </h2>
         {next ? <input type="hidden" name="next" value={next} /> : null}
-        <Field label="Email">
-          <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            className={fieldClasses}
-          />
-        </Field>
+
+        <div className="overflow-hidden rounded-xl border border-cal-border bg-cal-bg transition-colors focus-within:border-cal-accent focus-within:ring-2 focus-within:ring-cal-accent/15">
+          <FloatingField label="Email for sign-in link">
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              placeholder=" "
+              className={floatingInputClasses + " rounded-xl"}
+            />
+          </FloatingField>
+        </div>
+
         <button
           type="submit"
           disabled={mlPending}
-          className="mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-cal-border bg-transparent px-4 text-[13px] font-medium text-cal-text transition-colors hover:bg-cal-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2 disabled:opacity-60"
+          className="mt-1 inline-flex h-12 items-center justify-center rounded-xl bg-[color:var(--cal-bg-subtle)] px-4 text-[14px] font-medium text-cal-text transition-colors hover:bg-[color:var(--cal-bg-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cal-accent focus-visible:ring-offset-2 disabled:opacity-60"
         >
-          {mlPending ? "Sending..." : "Send me a sign-in link"}
+          {mlPending ? "Sending…" : "Send me a sign-in link"}
         </button>
         {mlState.notice ? (
           <p
@@ -119,16 +136,35 @@ export function LoginForms({ next }: { next?: string }) {
   );
 }
 
-const fieldClasses =
-  "rounded-lg border border-cal-border bg-cal-bg px-3.5 py-2.5 text-[14px] text-cal-text placeholder:text-cal-text-muted transition-colors hover:border-cal-bg-emphasis focus:border-cal-accent focus:outline-none focus:ring-2 focus:ring-cal-accent/15";
+/*
+ * Airbnb-style floating-label field.
+ *
+ * The input has placeholder=" " (single space, not empty string!) so
+ * the :placeholder-shown selector reliably targets the empty state.
+ * That selector + peer-focus drives the label's translate + scale.
+ *
+ * peer/peer-focus pattern: input is `peer`; the <span> label reacts
+ * to the input's focus & placeholder-shown state via Tailwind's
+ * peer-* selectors, so the label "floats" up when typing or focused.
+ */
+const floatingInputClasses =
+  "peer block h-14 w-full bg-transparent px-4 pt-5 pb-1 text-[15px] text-cal-text placeholder-shown:pt-3.5 placeholder-shown:pb-3.5 placeholder:text-transparent focus:outline-none";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function FloatingField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="grid gap-1.5">
-      <span className="text-[12px] font-medium uppercase tracking-[0.05em] text-cal-text-secondary">
+    <label className="relative block">
+      {children}
+      <span
+        className="pointer-events-none absolute left-4 top-2 text-[10px] font-medium uppercase tracking-[0.06em] text-cal-text-muted transition-all peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:text-[14px] peer-placeholder-shown:font-normal peer-placeholder-shown:tracking-normal peer-placeholder-shown:normal-case peer-focus:top-2 peer-focus:translate-y-0 peer-focus:text-[10px] peer-focus:font-medium peer-focus:uppercase peer-focus:tracking-[0.06em] peer-focus:text-cal-text-secondary"
+      >
         {label}
       </span>
-      {children}
     </label>
   );
 }

@@ -51,17 +51,34 @@ const PLATFORM_HOSTS = new Set<string>([
 // and must not be resolved as tenant slugs.
 const RESERVED_SUBDOMAINS = new Set<string>(["custom", "api", "www"]);
 
-// True when the request is local development.
+// True when the request is the bare local dev host (no subdomain).
+// `newsong.localhost` is NOT covered here so we can resolve tenant
+// subdomains in dev exactly like prod. The platform-host branch
+// (no tenant context) only fires for bare localhost / 127.0.0.1.
 function isLocalDev(hostname: string): boolean {
   const bareHost = hostname.split(":")[0];
   return (
     bareHost === "localhost" ||
     bareHost === "127.0.0.1" ||
     bareHost === "::1" ||
-    bareHost.endsWith(".localhost") ||
-    bareHost.endsWith(".lvh.me") ||
     bareHost === "lvh.me"
   );
+}
+
+// True when the request is a tenant subdomain in local dev,
+// e.g. `newsong.localhost:3000` or `newsong.lvh.me:3000`.
+function isLocalTenantSubdomain(hostname: string): {
+  isLocal: boolean;
+  subdomain: string | null;
+} {
+  const bareHost = hostname.split(":")[0];
+  if (bareHost.endsWith(".localhost")) {
+    return { isLocal: true, subdomain: bareHost.replace(/\.localhost$/, "") };
+  }
+  if (bareHost.endsWith(".lvh.me")) {
+    return { isLocal: true, subdomain: bareHost.replace(/\.lvh\.me$/, "") };
+  }
+  return { isLocal: false, subdomain: null };
 }
 
 function stripTenantHeaders(headers: Headers): Headers {
@@ -113,8 +130,27 @@ export async function middleware(request: NextRequest) {
   let tenantContext: { tenantId: string; tenantSlug: string; domainType: "subdomain" | "custom" } | null = null;
   let earlyResponse: NextResponse | null = null;
 
+  const localTenant = isLocalTenantSubdomain(hostname);
+
   if (PLATFORM_HOSTS.has(hostname) || isLocalDev(hostname)) {
-    // Pass through; no tenant.
+    // Bare local-dev or platform host; no tenant context.
+  } else if (localTenant.isLocal && localTenant.subdomain) {
+    // Local dev with a tenant subdomain (e.g. newsong.localhost:3000).
+    // Resolve via the same DB lookup as prod so the dev surface
+    // exactly mirrors production. No primary-domain redirect dance —
+    // local dev never has a verified custom domain attached.
+    if (!RESERVED_SUBDOMAINS.has(localTenant.subdomain)) {
+      const tenant = await lookupTenantBySlug(localTenant.subdomain);
+      if (tenant) {
+        tenantContext = {
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          domainType: "subdomain",
+        };
+      }
+      // Unknown subdomain in dev: silently fall through (no tenant
+      // context). Don't redirect — that would break the dev loop.
+    }
   } else if (!hostname.endsWith(`.${PLATFORM_DOMAIN}`)) {
     // Custom domain branch.
     const tenantDomain = await lookupCustomDomain(hostname);
@@ -128,7 +164,7 @@ export async function middleware(request: NextRequest) {
       earlyResponse = NextResponse.redirect(`https://${PLATFORM_DOMAIN}`);
     }
   } else {
-    // Subdomain branch.
+    // Subdomain branch (production *.churchplatform.com).
     const subdomain = hostname.replace(`.${PLATFORM_DOMAIN}`, "").split(":")[0];
     if (!RESERVED_SUBDOMAINS.has(subdomain)) {
       const tenant = await lookupTenantBySlug(subdomain);

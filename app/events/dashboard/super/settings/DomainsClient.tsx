@@ -40,10 +40,13 @@ export function DomainsClient({
   domains,
   tenantSlug,
   cnameTarget,
+  embedded = false,
 }: {
   domains: DomainRow[];
   tenantSlug: string;
   cnameTarget: string;
+  /** When true, suppresses the page wrapper + own h1 — caller renders its own. */
+  embedded?: boolean;
 }) {
   const [newDomain, setNewDomain] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -110,16 +113,28 @@ export function DomainsClient({
     startTransition(() => router.refresh());
   }
 
+  const Wrapper: React.ElementType = embedded
+    ? ({ children }: { children: React.ReactNode }) => <>{children}</>
+    : ({ children }: { children: React.ReactNode }) => (
+        <div className="mx-auto max-w-[1200px] px-6 py-12">{children}</div>
+      );
+
   return (
-    <div className="mx-auto max-w-[1200px] px-6 py-12">
-      <header className="mb-8">
-        <h1 className="font-display text-[28px] font-medium leading-tight">
-          Tenant Settings
-        </h1>
-        <p className="mt-1 text-[13px] text-cal-text-secondary">
-          Manage custom domains for <strong>{tenantSlug}</strong>.
-        </p>
-      </header>
+    <Wrapper>
+      {!embedded ? (
+        <header className="mb-8">
+          <h1 className="font-display text-[28px] font-medium leading-tight">
+            Tenant Settings
+          </h1>
+          <p className="mt-1 text-[13px] text-cal-text-secondary">
+            Manage custom domains for <strong>{tenantSlug}</strong>.
+          </p>
+        </header>
+      ) : (
+        <h2 className="mb-3 font-display text-[18px] font-medium leading-tight">
+          Custom Domains
+        </h2>
+      )}
 
       <section className="mb-8 rounded-lg border border-cal-border bg-cal-card-bg p-6">
         <h2 className="font-display text-[18px] font-medium leading-tight">
@@ -258,7 +273,7 @@ export function DomainsClient({
           </ul>
         )}
       </section>
-    </div>
+    </Wrapper>
   );
 }
 
