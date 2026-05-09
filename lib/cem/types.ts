@@ -37,6 +37,66 @@ export type HolidayListItem = {
   year: number;
 };
 
+// ── Request types (F14-F16) ────────────────────────────────────────
+
+export type RequestStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "ready_for_approval"
+  | "approved"
+  | "returned"
+  | "deleted";
+
+export type EventRequestType = "sunday" | "regional" | "local";
+
+/** Status badge palette per PRD Section 6. Client-safe (no DB code). */
+export const STATUS_STYLES: Record<
+  RequestStatus,
+  { label: string; bg: string; text: string; border: string }
+> = {
+  draft: { label: "Draft", bg: "#f9fafb", text: "#4b5563", border: "#d1d5db" },
+  submitted: { label: "Submitted", bg: "#f0f9ff", text: "#0c4a6e", border: "#bae6fd" },
+  under_review: {
+    label: "Under Review",
+    bg: "#fefce8",
+    text: "#854d0e",
+    border: "#fde68a",
+  },
+  ready_for_approval: {
+    label: "Ready for Approval",
+    bg: "#f0fdf4",
+    text: "#166534",
+    border: "#bbf7d0",
+  },
+  approved: { label: "Approved", bg: "#f0fdf4", text: "#166534", border: "#86efac" },
+  returned: { label: "Returned", bg: "#fef2f2", text: "#991b1b", border: "#fecaca" },
+  deleted: { label: "Deleted", bg: "#fef2f2", text: "#991b1b", border: "#fca5a5" },
+};
+
+export type RequestListItem = {
+  id: string;
+  title: string;
+  type: EventRequestType;
+  status: RequestStatus;
+  date: string | null;
+  time: string | null;
+  location: string | null;
+  description: string | null;
+  expected_attendance: number | null;
+  budget: number | null;
+  department_id: string | null;
+  department_name: string | null;
+  submitted_by: string | null;
+  claimed_by: string | null;
+  approved_by: string | null;
+  submitted_at: Date | null;
+  claimed_at: Date | null;
+  forwarded_at: Date | null;
+  approved_at: Date | null;
+  created_at: Date | null;
+};
+
 // ── Birthday types (F10) ────────────────────────────────────────────
 //
 // SECURITY: This DTO intentionally has NO `year` field. PRD Section

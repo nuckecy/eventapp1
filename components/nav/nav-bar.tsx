@@ -27,6 +27,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { RoleBadge } from "@/components/role-badge";
 import { NavLink } from "@/components/nav/nav-link";
+import { countUnread } from "@/lib/cem/notifications";
 
 const APP_BASE = "/events";
 
@@ -48,6 +49,9 @@ function dashboardHrefForRole(
 export async function NavBar() {
   const session = await getSession();
   const showDashboard = session && session.role !== "member";
+  const initialUnread = session
+    ? await countUnread(session.tenantId, session.userId)
+    : 0;
 
   return (
     <header
@@ -102,7 +106,7 @@ export async function NavBar() {
                 {session.name ?? session.email ?? "Signed in"}
               </span>
               <RoleBadge role={session.role} />
-              <NotificationBell />
+              <NotificationBell authenticated initialUnread={initialUnread} />
               {/* Logout: form-POST to /auth/logout. GET returns 405. */}
               <form action="/auth/logout" method="post" className="contents">
                 <button

@@ -9,12 +9,15 @@
 
 import type { ReactNode } from "react";
 import { NavBar } from "@/components/nav/nav-bar";
+import { ToastProvider } from "@/components/cem/toast";
 
 export default function EventsLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <NavBar />
-      <main className="flex-1">{children}</main>
-    </div>
+    <ToastProvider>
+      <div className="flex min-h-screen flex-col">
+        <NavBar />
+        <main className="flex-1">{children}</main>
+      </div>
+    </ToastProvider>
   );
 }

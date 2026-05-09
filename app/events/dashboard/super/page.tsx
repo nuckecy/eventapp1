@@ -1,14 +1,24 @@
-// Super Admin Dashboard — F16 stub.
+// Super Admin Dashboard (FR-7).
+//
+// Auth-gated: superadmin / platform_admin only.
+
+import { redirect } from "next/navigation";
+import { requireAuth } from "@/lib/auth/session";
+import { listAllRequests, superAdminStats } from "@/lib/cem/requests";
+import { SuperAdminDashboardClient } from "./SuperAdminDashboardClient";
 
 export const metadata = { title: "Super Admin Dashboard · Church Event Management" };
 
-export default function SuperAdminDashboardStubPage() {
-  return (
-    <div className="mx-auto max-w-[1200px] px-6 py-12">
-      <h1 className="font-display text-[28px] font-medium">Super Admin Dashboard</h1>
-      <p className="mt-1 text-[13px] text-cal-text-secondary">
-        Approve / Edit-Approve / Delete actions land in F16.
-      </p>
-    </div>
-  );
+export default async function SuperAdminDashboardPage() {
+  const session = await requireAuth();
+  if (session.role !== "superadmin" && session.role !== "platform_admin") {
+    redirect("/events");
+  }
+
+  const [stats, requests] = await Promise.all([
+    superAdminStats(session.tenantId),
+    listAllRequests(session.tenantId),
+  ]);
+
+  return <SuperAdminDashboardClient stats={stats} requests={requests} />;
 }
