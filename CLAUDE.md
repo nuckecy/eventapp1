@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 3 (Birthdays — F11 next up)
-- **Current Feature:** F11 — Birthday Self-Service (next up)
+- **Current Phase:** 4 (Dashboards — F13 next up). Phase 3 complete.
+- **Current Feature:** F13 — StatsRow component (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F10 (Birthdays Public View) shipped. The most security-sensitive page in the app: the non-negotiable rule is "year never leaks to public/authenticated list endpoints" and we enforce it with both a query-layer projection (don't SELECT year) and a type-level guarantee (DTO has no year field). Landmark calculations happen entirely server-side in SQL (CASE expression on `(currentYear - year) IN (10,20,30,40,50,60,70,80,90)`); only `isLandmark`, `landmarkColor`, and (for admin viewers only) `age` are returned. Live verified: 0 of 9 distinct seed years (1946–2016) appear in anon HTML; 0 'Turning XX' tags for anon viewer; Sister Mary Johnson's "Landmark" tag renders correctly (50 in 2026, opted in). Self-service bar + admin unmapped banner are F11/F12 stubs respectively. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F11 (Birthday Self-Service) + F12 (Unmapped Birthday Pool) shipped, closing Phase 3. F11 added `/api/me/birthday` (the only endpoint where year is allowed) with same-origin guard, Zod validation, and a clean inline edit form. F12 added the admin Unmapped Pool with a fuzzy-match helper, server actions for Map/Dismiss (admin-role-gated, audit-logged), and a collapsible amber banner that expands into a fluid card grid. F11 endpoint verified live: 401 unauthenticated, 403 cross-origin. Security audits: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -36,6 +36,8 @@
 | F08 | Departments Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Schema migration `0002_add_lead_name.sql` added `cem_departments.lead_name` text column; seed re-populated. Auth gating at the query layer: `listDepartmentsPublic` projects only `id/name/icon/lead_name` (no email/phone); `listDepartmentsAuthenticated` adds them. The data-access layer makes contact leakage type-impossible for anon requests. Live test confirmed 0/6 emails and 0/6 phones leak into anonymous HTML; lead names + lock prompts render correctly. Login banner uses `encodeURIComponent` on the next-path. |
 | F09 | Holidays Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tenant-scoped `listHolidays` with type filter. HolidayRow reuses the F06 EventRow visual pattern. Three pill chips (PUBLIC HOLIDAY/CHURCH/SPECIAL) toggle in URL. Past months collapse into a `<details>` accordion. The Plan button (admin/superadmin only) is server-side conditionally rendered — verified: 0 Plan buttons + 0 dashboard URLs in anonymous HTML. EmptyState component generalised with a `noun` prop ("events" / "holidays") for reuse. |
 | F10 | Birthdays — Public View | 2026-05-08 | ✅ Yes (0 C / 0 H) | Year-leak rule (PRD §16#6) enforced by both **query projection** (`listBirthdaysForView` does NOT SELECT `year`) and **type-level guarantee** (`BirthdayListItem` has no `year` key). Landmark visibility applied server-side: anon/member sees `Landmark` only when person opted in; admin sees `Turning {age}` always (age computed in SQL, year still not returned). Live verified: 0 of 9 distinct seed years in anon HTML; 0 'Turning' tags for anon; 1 Landmark tag (Sister Mary Johnson, opted in, 50 in 2026). Current month full-width with THIS MONTH amber badge; other months in fluid card grid (260–340 px), past at 55% opacity. Self-service bar + admin unmapped banner are F11/F12 placeholders. |
+| F11 | Birthday Self-Service | 2026-05-08 | ✅ Yes (0 C / 0 H) | Inline edit form replaces F10's self-service stub. `/api/me/birthday` GET returns own birthday with year (the only endpoint where year is allowed); PUT validates with Zod (day 1-31, month 1-12, year 1900-currentYear nullable, show_age boolean) plus a calendar-validity probe. UserId comes from session, never request body. Same-origin Origin/Host check on PUT. 401 unauth + 403 cross-origin verified live. |
+| F12 | Unmapped Birthday Pool | 2026-05-08 | ✅ Yes (0 C / 0 H) | Admin-only collapsible amber banner expands into fluid card grid with Map/Dismiss actions. `lib/birthdays/fuzzy-match.ts` (token-overlap matcher with honorific stripping) computes suggested matches. Server actions verify admin role + tenant before any DB write; both actions write `cem_audit_log` entries (`birthday.mapped` / `birthday.dismissed`) — INSERT-only at DB per F03's RLS. UI is cosmetic; security gate is at the action. |
 
 ---
 
@@ -45,7 +47,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F10 complete; F11 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
+| –  | –       | (idle — F11+F12 complete; F13 next up) | – |
 
 ---
 
@@ -55,9 +57,7 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F11 | Birthday Self-Service            | 3     | F10 ✅           |
-| F12 | Unmapped Birthday Pool           | 3     | F10 ✅           |
-| F13 | StatsRow Component               | 4     | F04              |
+| F13 | StatsRow Component               | 4     | F04 ✅           |
 | F14 | Lead Dashboard                   | 4     | F13, F03         |
 | F15 | Admin Dashboard                  | 4     | F13, F14         |
 | F16 | Super Admin Dashboard            | 4     | F13, F15         |
@@ -226,6 +226,8 @@
 | F08     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Auth gating implemented at the query layer (split `listDepartmentsPublic` / `listDepartmentsAuthenticated`) so contact details cannot be returned for unauthenticated requests by construction. Tenant-scoped (every query filters by `tenant_id`). Server-only marker on the data-access module. Live verification: 0 of 6 emails and 0 of 6 phones appear in anon-visited HTML. nextPath URL-encoded in the login banner. 6 Medium npm-audit carry-over. |
 | F09     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Plan button is server-side conditionally rendered: `getSession()` returns role server-side; `canPlan = role ∈ {admin, superadmin, platform_admin}`. Verified live with anonymous request: 0 occurrences of `>Plan<` and 0 occurrences of the dashboard URL in HTML. Tenant-scoped queries (`eq(cemHolidays.tenant_id, tenantId)`); `server-only` marker on `lib/cem/holidays.ts`. 6 Medium npm-audit carry-over. |
 | F10     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Year-leak rule enforced at TWO layers: (1) `listBirthdaysForView` does NOT include `cemBirthdays.year` in its SELECT projection, so the value never leaves SQL for non-admin viewers; (2) `BirthdayListItem` type has no `year` key, so even a future bug rendering the entire DTO cannot leak it. Landmark + age computed via SQL CASE expression, returned only when visibility rules permit. Live verified: 0 occurrences of any of 9 distinct seed years (1946, 1956, 1966, 1976, 1986, 1990, 1996, 2006, 2016) in anonymous HTML. 0 'Turning XX' tags for non-admin viewers. Tenant-scoped at lines 118 + 153 of `lib/cem/birthdays.ts`. 6 Medium npm-audit carry-over. |
+| F11     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. `/api/me/birthday` is the one place year IS returned, scoped to (session.userId, session.tenantId). Zod schema enforces day 1-31, month 1-12, year 1900-currentYear nullable, show_age boolean. Calendar-validity probe rejects e.g. Feb 30. Same-origin guard on PUT (Origin/Host comparison). 401 unauth + 403 cross-origin verified live with curl. UserId from session, NEVER request body. 6 Medium npm-audit carry-over. |
+| F12     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Admin role checked server-side at every action (`mapBirthdayAction`, `dismissBirthdayAction`); UI gating is cosmetic only. Both actions write `cem_audit_log` entries with the actor's userId, target id, and action label — closes part of F18 early (RLS already enforces INSERT-only). Tenant scope filtered on both unmapped lookup and update. Zod validates input shape. Suggested matches use the new `lib/birthdays/fuzzy-match.ts` (pure functions, no DB). 6 Medium npm-audit carry-over. |
 
 ---
 

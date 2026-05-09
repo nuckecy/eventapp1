@@ -28,18 +28,19 @@
 // flow + /api/me/birthday endpoint (the only place year IS allowed).
 // F12 (unmapped pool) replaces the banner stub with expand/Map/Dismiss.
 
-import { BirthdaySelfServiceStub } from "@/components/cem/birthday-self-service-stub";
+import { BirthdaySelfService } from "@/components/cem/birthday-self-service";
 import { CurrentMonthSection } from "@/components/cem/birthday-month-section";
 import { LoginPromptBanner } from "@/components/cem/login-prompt-banner";
 import { OtherMonthsGrid } from "@/components/cem/other-months-grid";
-import { UnmappedBannerStub } from "@/components/cem/unmapped-banner-stub";
+import { UnmappedPool } from "@/components/cem/unmapped-pool";
 import { getSession } from "@/lib/auth/session";
 import {
-  countUnmappedBirthdays,
   listBirthdaysForView,
   type BirthdayViewerRole,
 } from "@/lib/cem/birthdays";
 import { getCurrentTenantId } from "@/lib/cem/events";
+import { getOwnBirthday } from "@/lib/cem/own-birthday";
+import { listUnmappedBirthdays } from "@/lib/cem/unmapped-birthdays";
 import type { BirthdayListItem } from "@/lib/cem/types";
 
 export const metadata = { title: "Birthdays · Church Event Management" };
@@ -94,10 +95,13 @@ export default async function BirthdaysPage() {
   const todayMonthIdx = now.getMonth();
   const todayDay = now.getDate();
 
-  // Fetch in parallel; both are tenant-scoped server-side.
-  const [birthdays, unmappedCount] = await Promise.all([
+  // Fetch in parallel; all tenant-scoped server-side. Own birthday only
+  // fetched when authenticated (the only place year is allowed to come back).
+  // Unmapped pool fetched only when admin (year is allowed for admin).
+  const [birthdays, unmappedRecords, ownBirthday] = await Promise.all([
     listBirthdaysForView(tenantId, viewerRole, now),
-    isAdminViewer ? countUnmappedBirthdays(tenantId) : Promise.resolve(0),
+    isAdminViewer ? listUnmappedBirthdays(tenantId) : Promise.resolve([]),
+    session ? getOwnBirthday(tenantId, session.userId) : Promise.resolve(null),
   ]);
 
   // Group + sort.
@@ -132,14 +136,22 @@ export default async function BirthdaysPage() {
       </header>
 
       {/* Self-service bar (auth) or login prompt (anon). */}
-      {session ? (
-        <BirthdaySelfServiceStub userName={session.name ?? session.email ?? "there"} />
+      {session && ownBirthday ? (
+        <BirthdaySelfService
+          initial={{
+            day: ownBirthday.day,
+            month: ownBirthday.month,
+            year: ownBirthday.year,
+            show_age: ownBirthday.show_age,
+          }}
+          userName={session.name ?? session.email ?? "there"}
+        />
       ) : (
         <LoginPromptBanner nextPath="/events/birthdays" />
       )}
 
-      {/* Admin-only unmapped banner stub (F12 will own the real UI). */}
-      {isAdminViewer ? <UnmappedBannerStub count={unmappedCount} /> : null}
+      {/* Admin-only unmapped pool (F12). */}
+      {isAdminViewer ? <UnmappedPool records={unmappedRecords} /> : null}
 
       {birthdays.length === 0 ? (
         <div className="rounded-lg border border-cal-border bg-cal-card-bg px-6 py-12 text-center text-[13px] text-cal-text-secondary">
