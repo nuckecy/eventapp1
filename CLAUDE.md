@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 3 (Birthdays — F10 next up). Phase 2 (Public Pages) **complete**.
-- **Current Feature:** F10 — Birthdays Public View (next up)
+- **Current Phase:** 3 (Birthdays — F11 next up)
+- **Current Feature:** F11 — Birthday Self-Service (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F09 (Holidays Page) shipped, closing Phase 2. 21 Berlin 2026 holidays render in chronological monthly sections with past-stack accordion. Three type chips (PUBLIC HOLIDAY / CHURCH / SPECIAL) toggle via URL state. The role-gated **Plan** button is server-rendered: `getSession()` decides server-side, anon and member/lead users never see the button in their HTML. Verified: 0 'Plan' buttons in anonymous-visited HTML. EmptyState component generalised to take a `noun` prop so it can be reused by holidays. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F10 (Birthdays Public View) shipped. The most security-sensitive page in the app: the non-negotiable rule is "year never leaks to public/authenticated list endpoints" and we enforce it with both a query-layer projection (don't SELECT year) and a type-level guarantee (DTO has no year field). Landmark calculations happen entirely server-side in SQL (CASE expression on `(currentYear - year) IN (10,20,30,40,50,60,70,80,90)`); only `isLandmark`, `landmarkColor`, and (for admin viewers only) `age` are returned. Live verified: 0 of 9 distinct seed years (1946–2016) appear in anon HTML; 0 'Turning XX' tags for anon viewer; Sister Mary Johnson's "Landmark" tag renders correctly (50 in 2026, opted in). Self-service bar + admin unmapped banner are F11/F12 stubs respectively. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -35,6 +35,7 @@
 | F07 | Calendar — Month Grid View | 2026-05-08 | ✅ Yes (0 C / 0 H) | 7-col Sun-Sat grid via `monthGridCells()` (prev-month + current + next-month overflow). Day cells: 90px min-height, today highlighted with brand-color circle, outside-month cells dimmed with cal-bg-subtle background. Event chips with white text on type-color background. EventDetailModal built on native `<dialog>` — focus trap, Esc, scroll-lock, ARIA, return-focus all free. Month nav via URL (`?month=YYYY-MM`); `parseMonthParam` range-checks year (1900-9999) and month (1-12). Malformed input falls back to today's month, never crashes. |
 | F08 | Departments Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Schema migration `0002_add_lead_name.sql` added `cem_departments.lead_name` text column; seed re-populated. Auth gating at the query layer: `listDepartmentsPublic` projects only `id/name/icon/lead_name` (no email/phone); `listDepartmentsAuthenticated` adds them. The data-access layer makes contact leakage type-impossible for anon requests. Live test confirmed 0/6 emails and 0/6 phones leak into anonymous HTML; lead names + lock prompts render correctly. Login banner uses `encodeURIComponent` on the next-path. |
 | F09 | Holidays Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tenant-scoped `listHolidays` with type filter. HolidayRow reuses the F06 EventRow visual pattern. Three pill chips (PUBLIC HOLIDAY/CHURCH/SPECIAL) toggle in URL. Past months collapse into a `<details>` accordion. The Plan button (admin/superadmin only) is server-side conditionally rendered — verified: 0 Plan buttons + 0 dashboard URLs in anonymous HTML. EmptyState component generalised with a `noun` prop ("events" / "holidays") for reuse. |
+| F10 | Birthdays — Public View | 2026-05-08 | ✅ Yes (0 C / 0 H) | Year-leak rule (PRD §16#6) enforced by both **query projection** (`listBirthdaysForView` does NOT SELECT `year`) and **type-level guarantee** (`BirthdayListItem` has no `year` key). Landmark visibility applied server-side: anon/member sees `Landmark` only when person opted in; admin sees `Turning {age}` always (age computed in SQL, year still not returned). Live verified: 0 of 9 distinct seed years in anon HTML; 0 'Turning' tags for anon; 1 Landmark tag (Sister Mary Johnson, opted in, 50 in 2026). Current month full-width with THIS MONTH amber badge; other months in fluid card grid (260–340 px), past at 55% opacity. Self-service bar + admin unmapped banner are F11/F12 placeholders. |
 
 ---
 
@@ -44,7 +45,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F09 complete; Phase 2 done; F10 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
+| –  | –       | (idle — F10 complete; F11 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
 
 ---
 
@@ -54,9 +55,8 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F10 | Birthdays — Public View          | 3     | F05 ✅, F06 ✅   |
-| F11 | Birthday Self-Service            | 3     | F10              |
-| F12 | Unmapped Birthday Pool           | 3     | F10              |
+| F11 | Birthday Self-Service            | 3     | F10 ✅           |
+| F12 | Unmapped Birthday Pool           | 3     | F10 ✅           |
 | F13 | StatsRow Component               | 4     | F04              |
 | F14 | Lead Dashboard                   | 4     | F13, F03         |
 | F15 | Admin Dashboard                  | 4     | F13, F14         |
@@ -225,6 +225,7 @@
 | F07     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. No new DB queries (events come pre-filtered from F06 helper). `parseMonthParam` range-checks year (1900-9999) and month (1-12) before parsing — malicious values return null and the page falls back to today's month rather than crashing. Modal built on native `<dialog>` so focus trap / Esc / ARIA / scroll-lock are browser-managed (no custom JS surface to audit). All event content rendered through React text nodes (auto-escaped). 6 Medium npm-audit carry-over. |
 | F08     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Auth gating implemented at the query layer (split `listDepartmentsPublic` / `listDepartmentsAuthenticated`) so contact details cannot be returned for unauthenticated requests by construction. Tenant-scoped (every query filters by `tenant_id`). Server-only marker on the data-access module. Live verification: 0 of 6 emails and 0 of 6 phones appear in anon-visited HTML. nextPath URL-encoded in the login banner. 6 Medium npm-audit carry-over. |
 | F09     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Plan button is server-side conditionally rendered: `getSession()` returns role server-side; `canPlan = role ∈ {admin, superadmin, platform_admin}`. Verified live with anonymous request: 0 occurrences of `>Plan<` and 0 occurrences of the dashboard URL in HTML. Tenant-scoped queries (`eq(cemHolidays.tenant_id, tenantId)`); `server-only` marker on `lib/cem/holidays.ts`. 6 Medium npm-audit carry-over. |
+| F10     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Year-leak rule enforced at TWO layers: (1) `listBirthdaysForView` does NOT include `cemBirthdays.year` in its SELECT projection, so the value never leaves SQL for non-admin viewers; (2) `BirthdayListItem` type has no `year` key, so even a future bug rendering the entire DTO cannot leak it. Landmark + age computed via SQL CASE expression, returned only when visibility rules permit. Live verified: 0 occurrences of any of 9 distinct seed years (1946, 1956, 1966, 1976, 1986, 1990, 1996, 2006, 2016) in anonymous HTML. 0 'Turning XX' tags for non-admin viewers. Tenant-scoped at lines 118 + 153 of `lib/cem/birthdays.ts`. 6 Medium npm-audit carry-over. |
 
 ---
 

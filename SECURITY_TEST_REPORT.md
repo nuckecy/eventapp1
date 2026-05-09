@@ -1,9 +1,110 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F09)
+**Latest run:** 2026-05-08 (F10)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F10 — Birthdays Public View (2026-05-08)
+
+**Files audited:**
+`lib/cem/birthdays.ts`, `lib/cem/types.ts` (BirthdayListItem + LandmarkColor added), `components/cem/birthday-row.tsx`, `components/cem/birthday-month-section.tsx`, `components/cem/other-months-grid.tsx`, `components/cem/birthday-self-service-stub.tsx`, `components/cem/unmapped-banner-stub.tsx`, `app/events/birthdays/page.tsx`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F10 acceptance.**
+
+### Verified controls (F10 security checkpoint per CLAUDE.md)
+
+The non-negotiable rule for this feature, restated:
+
+> **PRD Section 16, key security rule #6:** "Birthday year is NEVER returned in public or authenticated birthday list endpoints. Only `/api/me/birthday` (own data) and admin endpoints with `?admin=true` return year."
+
+We satisfy this with **defense in depth across three layers**:
+
+1. **Query-layer projection.** `listBirthdaysForView()` builds a Drizzle SELECT that does **not** include `cemBirthdays.year`. The year is referenced only inside SQL fragments (`(${currentYear} - ${cemBirthdays.year})` for landmark age computation), and the result of those fragments is bucketed into `_age`, `_isLandmarkAge`, and `_landmarkColor` — never the raw year. The DB does the math; the year never leaves the SQL execution context for non-admin viewers.
+
+2. **Type-level guarantee.** The DTO `BirthdayListItem` (in `lib/cem/types.ts`) has no `year` key in its TypeScript type. Future contributors writing `<div>{birthday.year}</div>` would get a compile error. The TS type is the contract — any leak would have to first defeat the type system.
+
+3. **Visibility logic enforced server-side.** Even the derived `age` and `isLandmark` flags are gated by viewer role + `show_age` per FR-4 rules:
+   - Anonymous / Member / Lead: tag visible only when `show_age=true` AND landmark age. `age` is always null.
+   - Admin / Super Admin / Platform Admin: tag visible on every landmark age. `age` populated.
+   The mapping happens in JavaScript on the server (see `listBirthdaysForView`'s `.map()` callback). Clients receive the already-resolved DTO.
+
+### CRITICAL live verification — anonymous user @ /events/birthdays
+
+| Check | Expected | Observed |
+|---|---|---|
+| HTTP | 200 | 200 ✓ |
+| All 15 mapped-birthday names render | yes | all 15 unique names present ✓ |
+| Year `1946` (Agnes Balogun) in HTML | 0 | **0 ✓** |
+| Year `1956` (Elder Peter) in HTML | 0 | **0 ✓** |
+| Year `1966` (multiple) in HTML | 0 | **0 ✓** |
+| Year `1976` (Mary, Funke) in HTML | 0 | **0 ✓** |
+| Year `1986` (multiple) in HTML | 0 | **0 ✓** |
+| Year `1990` (Grace) in HTML | 0 | **0 ✓** |
+| Year `1996` (Chioma, Ruth) in HTML | 0 | **0 ✓** |
+| Year `2006` (Samuel) in HTML | 0 | **0 ✓** |
+| Year `2016` (Michael) in HTML | 0 | **0 ✓** |
+| Any 4-digit number in 1900–2024 range | none | only `2000` from `xmlns="http://www.w3.org/2000/svg"` (SVG namespace, not a leak) ✓ |
+| `Turning XX` admin-only tag | 0 | **0 ✓** |
+| `Landmark` tag for opted-in landmark person | 1 (Sister Mary Johnson, 50, opted in) | 1 ✓ |
+| `THIS MONTH` amber badge | present | rendered ✓ |
+| Login banner | present for anon | rendered ✓ |
+
+**Zero leaks across 9 distinct seed years.** The two-layer enforcement (query projection + type-level guarantee) holds.
+
+### Defense-in-depth additions (this feature)
+
+- **`age` computed in SQL.** Even for admin viewers, the year never leaves the database. The SQL CASE expression returns the derived integer, dropping the source.
+- **Visibility rules applied to the DTO.** The server returns `isLandmark: false` (with `landmarkColor: null` and `age: null`) for any row where the rule says the tag shouldn't be visible. The client-side renderer simply trusts the flag — there's no way for client code to "unhide" a tag.
+- **Compact card variant strips department text.** The PRD's fluid-card grid (other months) explicitly omits department per FR-4. Our `BirthdayRowCompact` enforces this; only name, day, and a compact landmark badge appear.
+- **`THIS MONTH` and `Today` badges use accessible color contrast.** Amber `#854d0e` on `#fffbeb` background; bordered to ensure it's not color-only (text "THIS MONTH" / "Today" carries the meaning).
+- **Self-service bar + admin unmapped banner are deliberately stubs.** F11 will own actual writes via `/api/me/birthday`; F12 will own the admin actions. The placeholders include security comments noting the non-negotiable rules so the next implementor can't miss them.
+- **Re-uses F08's `LoginPromptBanner`.** Anonymous birthday-page visitors see the same blue-banner login prompt; F11 may swap in birthday-specific copy.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F10 files | none |
+| `sql.raw` / SQL string interpolation (manual) | none — all SQL uses Drizzle's tagged-template `sql`/`eq` (parameter-bound) |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` | none |
+| `server-only` on data-access module | ✅ `lib/cem/birthdays.ts` line 26 |
+| Tenant scoping in every query | ✅ `eq(cemBirthdays.tenant_id, tenantId)` (line 118), `eq(cemBirthdaysUnmapped.tenant_id, tenantId)` (line 153) |
+| `.year` access in any UI component / page | **none** — verified by grep |
+| `BirthdayListItem` contains `year` field | **no** — type-level guarantee |
+
+### Acceptance verification (FR-4 visual)
+
+| Item | Expected | Observed |
+|---|---|---|
+| Page heading "Birthdays" | yes | ✓ |
+| Subtitle "Celebrate with our church family" | yes | ✓ |
+| Login banner for anon visitors | yes | ✓ |
+| Self-service bar for authed users | F11 stub | ✓ (placeholder) |
+| Admin-only unmapped banner | F12 stub | ✓ (placeholder, count from DB) |
+| Current month: full-width section + THIS MONTH badge | yes | ✓ |
+| Other months: fluid card grid (260–340 px) | yes | ✓ (`flex: 1 1 260px; max 340; min 240`) |
+| Past months at 55% opacity | yes | ✓ |
+| Today badge on today's birthday | yes when applicable | ✓ |
+| Production build | clean | 14 routes ✓ |
+| TypeScript strict | 0 errors | ✓ |
+
+### Carry-over from F01–F09
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 
