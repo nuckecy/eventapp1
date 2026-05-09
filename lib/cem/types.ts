@@ -17,3 +17,22 @@ export type EventListItem = {
   department_id: string | null;
   department_name: string | null;
 };
+
+// ── Holiday types (F09) ─────────────────────────────────────────────
+
+export type HolidayType = "public" | "church" | "special";
+
+export const HOLIDAY_TYPES: readonly HolidayType[] = [
+  "public",
+  "church",
+  "special",
+] as const;
+
+export type HolidayListItem = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  name: string;
+  type: HolidayType;
+  note: string | null;
+  year: number;
+};

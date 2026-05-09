@@ -12,10 +12,10 @@
 ---
 
 ## Project State
-- **Current Phase:** 2 (Public Pages — F09 next up)
-- **Current Feature:** F09 — Holidays Page (next up)
+- **Current Phase:** 3 (Birthdays — F10 next up). Phase 2 (Public Pages) **complete**.
+- **Current Feature:** F10 — Birthdays Public View (next up)
 - **Last Updated:** 2026-05-08
-- **Last Session Summary:** F08 (Departments Page) shipped. Schema gained a `lead_name` column (migration `0002_add_lead_name.sql`); seed re-populated all 6 departments. Two-card grid renders 6 ministries with icon + name + lead. Anonymous users see a blue "Log in to view contact details" banner + a lock prompt on each card. Authenticated users see clickable mailto/tel links. The auth gating happens at the **query layer**: `listDepartmentsPublic` doesn't even SELECT `email`/`phone` from the DB, while `listDepartmentsAuthenticated` does. Verified live: 0 of 6 emails and 0 of 6 phones leak into anonymous HTML. Security audit: 0 Critical, 0 High.
+- **Last Session Summary:** F09 (Holidays Page) shipped, closing Phase 2. 21 Berlin 2026 holidays render in chronological monthly sections with past-stack accordion. Three type chips (PUBLIC HOLIDAY / CHURCH / SPECIAL) toggle via URL state. The role-gated **Plan** button is server-rendered: `getSession()` decides server-side, anon and member/lead users never see the button in their HTML. Verified: 0 'Plan' buttons in anonymous-visited HTML. EmptyState component generalised to take a `noun` prop so it can be reused by holidays. Security audit: 0 Critical, 0 High.
 - **Deployment Path:** Option A — Supabase + Vercel (Supabase Postgres in eu-central-1/Frankfurt for GDPR, Supabase Auth, Supabase Storage, Vercel hosting). See Architecture Decision #1.
 
 ---
@@ -34,6 +34,7 @@
 | F06 | Calendar — List View | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tenant-scoped server query in `lib/cem/events.ts` with parameterized search (Drizzle `ilike`, LIKE meta-chars escaped, 200-char cap). EventRow / MonthSection / PastStack / FilterBar / ViewToggle / EmptyState. Filter state in URL (?q, ?type, ?dept) so views are shareable + back-button works. All 25 seed events confirmed in live HTML; type filter narrows correctly; empty state + view toggle stub for F07 working. Type-only `lib/cem/types.ts` lets client components import shared shapes without pulling server-only code. |
 | F07 | Calendar — Month Grid View | 2026-05-08 | ✅ Yes (0 C / 0 H) | 7-col Sun-Sat grid via `monthGridCells()` (prev-month + current + next-month overflow). Day cells: 90px min-height, today highlighted with brand-color circle, outside-month cells dimmed with cal-bg-subtle background. Event chips with white text on type-color background. EventDetailModal built on native `<dialog>` — focus trap, Esc, scroll-lock, ARIA, return-focus all free. Month nav via URL (`?month=YYYY-MM`); `parseMonthParam` range-checks year (1900-9999) and month (1-12). Malformed input falls back to today's month, never crashes. |
 | F08 | Departments Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Schema migration `0002_add_lead_name.sql` added `cem_departments.lead_name` text column; seed re-populated. Auth gating at the query layer: `listDepartmentsPublic` projects only `id/name/icon/lead_name` (no email/phone); `listDepartmentsAuthenticated` adds them. The data-access layer makes contact leakage type-impossible for anon requests. Live test confirmed 0/6 emails and 0/6 phones leak into anonymous HTML; lead names + lock prompts render correctly. Login banner uses `encodeURIComponent` on the next-path. |
+| F09 | Holidays Page | 2026-05-08 | ✅ Yes (0 C / 0 H) | Tenant-scoped `listHolidays` with type filter. HolidayRow reuses the F06 EventRow visual pattern. Three pill chips (PUBLIC HOLIDAY/CHURCH/SPECIAL) toggle in URL. Past months collapse into a `<details>` accordion. The Plan button (admin/superadmin only) is server-side conditionally rendered — verified: 0 Plan buttons + 0 dashboard URLs in anonymous HTML. EmptyState component generalised with a `noun` prop ("events" / "holidays") for reuse. |
 
 ---
 
@@ -43,7 +44,7 @@
 
 | ID | Feature | Status | Blockers |
 |----|---------|--------|----------|
-| –  | –       | (idle — F08 complete; F09 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
+| –  | –       | (idle — F09 complete; Phase 2 done; F10 next up; F03 demo-user login test still pending `SUPABASE_SERVICE_ROLE_KEY`) | – |
 
 ---
 
@@ -53,8 +54,7 @@
 
 | ID  | Feature                          | Phase | Dependencies     |
 |-----|----------------------------------|-------|------------------|
-| F09 | Holidays Page                    | 2     | F06 ✅           |
-| F10 | Birthdays — Public View          | 3     | F05, F06         |
+| F10 | Birthdays — Public View          | 3     | F05 ✅, F06 ✅   |
 | F11 | Birthday Self-Service            | 3     | F10              |
 | F12 | Unmapped Birthday Pool           | 3     | F10              |
 | F13 | StatsRow Component               | 4     | F04              |
@@ -224,6 +224,7 @@
 | F06     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Tenant-scoped queries (every cem_events / cem_departments select includes WHERE tenant_id = ?). Drizzle `ilike` for search, with SQL LIKE meta-chars (\, %, _) escaped before interpolation. Search input length capped at 200 chars both server-side (slice in events.ts) and client-side (maxLength=200). `lib/cem/events.ts` marked `import "server-only"` — client components can't accidentally pull DB code. Type-only module `lib/cem/types.ts` lets client components share shapes safely. 6 Medium npm-audit carry-over. |
 | F07     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. No new DB queries (events come pre-filtered from F06 helper). `parseMonthParam` range-checks year (1900-9999) and month (1-12) before parsing — malicious values return null and the page falls back to today's month rather than crashing. Modal built on native `<dialog>` so focus trap / Esc / ARIA / scroll-lock are browser-managed (no custom JS surface to audit). All event content rendered through React text nodes (auto-escaped). 6 Medium npm-audit carry-over. |
 | F08     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Auth gating implemented at the query layer (split `listDepartmentsPublic` / `listDepartmentsAuthenticated`) so contact details cannot be returned for unauthenticated requests by construction. Tenant-scoped (every query filters by `tenant_id`). Server-only marker on the data-access module. Live verification: 0 of 6 emails and 0 of 6 phones appear in anon-visited HTML. nextPath URL-encoded in the login banner. 6 Medium npm-audit carry-over. |
+| F09     | 2026-05-08 | 0        | 0    | 6      | 0   | ✅ PASS — Zero new findings. Plan button is server-side conditionally rendered: `getSession()` returns role server-side; `canPlan = role ∈ {admin, superadmin, platform_admin}`. Verified live with anonymous request: 0 occurrences of `>Plan<` and 0 occurrences of the dashboard URL in HTML. Tenant-scoped queries (`eq(cemHolidays.tenant_id, tenantId)`); `server-only` marker on `lib/cem/holidays.ts`. 6 Medium npm-audit carry-over. |
 
 ---
 

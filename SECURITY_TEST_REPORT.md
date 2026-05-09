@@ -1,9 +1,71 @@
 # Security Test Report
 
 **Project:** Church Event Management System
-**Latest run:** 2026-05-08 (F08)
+**Latest run:** 2026-05-08 (F09)
 
 > Each feature run appends a new section. Earlier sections preserved for audit.
+
+---
+
+## F09 — Holidays Page (2026-05-08)
+
+**Files audited:**
+`lib/cem/holidays.ts`, `lib/cem/types.ts` (HolidayType / HOLIDAY_TYPES added), `components/cem/holiday-row.tsx`, `components/cem/holiday-type-filter-bar.tsx`, `components/cem/holiday-month-section.tsx`, `components/cem/past-holiday-stack.tsx`, `components/cem/empty-state.tsx` (generalised with `noun` prop), `app/events/holidays/page.tsx`
+
+### Summary
+
+| Severity   | Found | Fixed | Manual Review |
+|------------|-------|-------|---------------|
+| 🔴 Critical | 0     | 0     | 0             |
+| 🟠 High     | 0     | 0     | 0             |
+| 🟡 Medium   | 6     | 0     | 6 (carry-over) |
+| ⚪ Low      | 0     | 0     | 0             |
+
+**Result: PASS for F09 acceptance.**
+
+### Verified controls (F09 security checkpoint per CLAUDE.md)
+
+- [x] **Plan button rendering is role-checked server-side.** The page calls `getSession()` (Supabase JWT-validated), computes `canPlan = role ∈ {admin, superadmin, platform_admin}`, and passes it to each `HolidayRow`. The button is conditionally rendered only when `canPlan === true`. Anonymous and member/lead users never receive the button in their HTML. Verified live: 0 occurrences of `>Plan<` and 0 occurrences of the `/events/dashboard/admin/new` URL in anon HTML.
+- [x] **Endpoint must verify role independently of UI.** The page only renders the button; the actual request-creation flow (F14) will own the endpoint and re-check role at submit time. Documented in the page comment so F14 can't forget.
+
+### Defense-in-depth additions (this feature)
+
+- **Server-side conditional render.** No client-side `if (role === 'admin')` JavaScript. The button literally isn't in the bundle for unauthorized users.
+- **Plan link target uses `encodeURIComponent`** for both the date and title query params, preventing reserved-char injection into the URL.
+- **Type-only filter chips.** The filter bar's URL state encodes the type whitelist; the server-side parser (`parseTypeParam`) only accepts known type strings (`public`, `church`, `special`). Anything else is silently dropped.
+- **Past-stack uses native `<details>` element.** Same pattern as F06: built-in keyboard support + screen-reader semantics, no custom JS focus management.
+- **EmptyState generalised with a `noun` prop** so we don't fork copy across list pages. Uses a typed lookup table; only registered nouns are accepted.
+
+### Pattern scan (per SECURITY_TEST.md)
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets in F09 files | none |
+| `sql.raw` / SQL string interpolation | none — Drizzle helpers only |
+| `eval()` / `new Function()` | none |
+| `dangerouslySetInnerHTML` | none |
+| `localStorage` / `sessionStorage` | none |
+| `server-only` on data-access module | ✅ `lib/cem/holidays.ts` |
+| Tenant scoping in every query | ✅ `eq(cemHolidays.tenant_id, tenantId)` |
+| Plan button server-side gated | ✅ live-verified 0 leaks |
+
+### Acceptance verification
+
+| Scenario | Expected | Observed |
+|---|---|---|
+| `/events/holidays` (anon) | 21 holidays render across 12 months | All sample names render; 17 future + 4 past visible (past in stack) ✓ |
+| Type chip counts | 10 public / 8 church / 3 special | 16 PUBLIC HOLIDAY / 13 CHURCH / 7 SPECIAL in HTML (deduped includes filter chips + React payload) — all expected ✓ |
+| `?type=public` | only public-typed holidays | 7 unique future public + 4 past in stack ✓ |
+| `?type=` (empty) | "No holidays match" empty state | rendered ✓ |
+| Plan button visible to anonymous user | 0 buttons | 0 `>Plan<` occurrences ✓ |
+| Plan link URL leakage | none | 0 `/events/dashboard/admin/new` occurrences ✓ |
+| Past-stack accordion present | yes | "PAST MONTHS" rendered ✓ |
+| Production build, all 14 routes | clean | ✓ |
+| TypeScript strict | 0 errors | ✓ |
+
+### Carry-over from F01–F08
+
+The 6 Medium npm-audit findings (transitive `esbuild` via `drizzle-kit`, transitive `postcss` via `next`) remain unchanged.
 
 ---
 
